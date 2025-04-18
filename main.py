@@ -1,18 +1,24 @@
+import sys
 import random
 import heapq
 from classes import *
 from helper import *
+import cProfile
 
-ps = [4,6,9]
+ps = [4,5,6,7,8,9,10,11,12,13,14,15,16]
+#ps = [4,5,6]
+#ps = [8]
+drift_directions = [1,-1]
+#drift_directions = [1]
 def create_end_devices(n, period):
+	random.seed(99)
+	join_times = [random.randint(1, period) for _ in range(n)]
 	eds = []
 	for i in range(n):
-		join_time = random.randint(0, period)		# nodes join within first period
-		#ed = ED(i, period*(1+i%3), join_time)
-		#ed = ED(i, period*3*(2-i%2), join_time)
-		#ed = ED(i, period*(3+(2*(i%2))), join_time)
-		ed = ED(i, period*ps[i%3], join_time)
-		print(ed.period/period)
+		join_time = join_times[i]
+		ed = ED(i, period*ps[i%len(ps)], join_time, drift_directions[i%2])
+		#ed = ED(i, period*ps[i%len(ps)], join_time, drift_directions[0])
+		#ed = ED(i, period, join_time, drift_directions[i%2])
 		eds.append(ed)
 	return eds
 
@@ -27,6 +33,7 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 	time_slots_start_times = []
 	time_slot_assignments = []
 	event_queue = []
+	incompatible_with_slot = []
 
 	for i in range(1, slot_count+1):
 		start_time_slot_i = int((i-1)*(slot_duration+GI))
@@ -34,14 +41,15 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 
 	for i in range(slot_count):
 		time_slot_assignments.append([])
+		incompatible_with_slot.append([])
 
 	for device in eds:
 		heapq.heappush(event_queue, Event(time=device.nextTX, event_type='TX_START', device=device.ID))
 
-	return time_slots_start_times, time_slot_assignments, event_queue
+	return time_slots_start_times, time_slot_assignments, event_queue, incompatible_with_slot
 
 
-n = 80
+n = 1550
 period = 1_000_000*60*30
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5
@@ -49,27 +57,64 @@ rx_delay = 1_000_000
 rx_no_preamble = int(1_000_000*0.3)								# 0.3 sec (approx: 9 symbols) rx window. 6 preamble symbols needs to be received in order to lock into signal
 slot_duration = tx_duration + rx_delay + rx_duration
 
-eds = create_end_devices(n, period)
-slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=1_000_000*60*60*24)
-time_slots_start_times, time_slot_assignments, event_queue = init_schedule(slot_count, slot_duration, GI, eds)
-sim_end = 1_000_000*60*60*24
+''' TODO
 
-print(slot_count)
+* Add functionality to handle what happens when a device joining the network cannot fit into the schedule.
+* Add functionality that can schedule incompatible device periods.
+
+'''
+
+#make some code that can visualize a segment (part) of the future transmissions as a timeline. the starting time (in microseconds) of all transmissions are in a list and I want the transmissions to be 4000000 microseconds. another list is also provided, it shows the starting time of all the time slots, which the transmissions are moved into when they are drift corrected. but since the transmissions are likely drifted they will not overlap perfectly. therefore you should use these slot_starting_times to mark the beginning of all time slots. so make all transmissions a red-transparent color so we can see the vertical lines of the slot starting times. since you cannot show all the hundreds of time slots a time_slot parameter with the value will indicate the first time slot you need to visualize. just show 10 time slots / transmissions. 
 
 def main():
+	channel = Channel()
+	eds = create_end_devices(n, period)
+	slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=1_000_000*60*60*12)
+	print("slot_count:", slot_count, "\tGI:", GI)
+	time_slots_start_times, time_slot_assignments, event_queue, incompatible_with_slot = init_schedule(slot_count, slot_duration, GI, eds)
+	sim_end = 1_000_000*60*60*24
 	simulation_clock = 0
+
+
+	#heapq.heappush(event_queue, Event(time=period*47, event_type='SHOW_SCHEDULE_ONE_SLOT', device=-1, time_slot=2))
+	#heapq.heappush(event_queue, Event(time=period*8, event_type='SHOW_SCHEDULE_DRIFT_PERSPECTIVE', device=-1, time_slot=2))
+	#heapq.heappush(event_queue, Event(time=period*24, event_type='SHOW_SCHEDULE_DRIFT_PERSPECTIVE', device=-1, time_slot=2))
+
 	while simulation_clock < sim_end and event_queue:
 		event = heapq.heappop(event_queue)
 		simulation_clock = event.time
 		device_ID = event.device
 
-		#if device_ID == 0 and event.event_type == 'TX_END':
-		#	print("yo", simulation_clock/period)
+		device_slot = get_device_time_slot(device_ID, time_slot_assignments)
+		#if simulation_clock > period:
+		#print(event.event_type, " \t", device_slot, device_ID, simulation_clock/period)
+		
+		#if device_slot == 2:
+			#print(simulation_clock/period ,time_slot_assignments[2],"\n")
+			#print(event.event_type, device_slot, device_ID, simulation_clock, time_slot_assignments[device_slot], "\n")
 
-		if event.event_type == 'TX_START':
+		if event.event_type == 'SHOW_SCHEDULE_ONE_SLOT':
+
+			show_one_time_slot_schedule(eds, time_slot_assignments, event.time_slot, period)
+
+		elif event.event_type == 'SHOW_SCHEDULE_DRIFT_PERSPECTIVE':
+
+			show_schedule_timeline(eds, time_slot_assignments, time_slots_start_times, event_queue, event.time_slot, slot_count, period)
+
+		elif event.event_type == 'TX_START':
 			
+			# Log the starting time of the transmission
+			current_tx_time = eds[device_ID].nextTX
+			eds[device_ID].uplink_times.append(current_tx_time)
+			
+			# Device updates its next transmission time
+			eds[device_ID].update_next_tx_time()
+
 			eds[device_ID].change_mode(simulation_clock, 'TX_START')
-			heapq.heappush(event_queue, Event(time=int(eds[device_ID].nextTX+tx_duration), event_type='TX_END', device=device_ID))
+			heapq.heappush(event_queue, Event(time=int(current_tx_time+tx_duration), event_type='TX_END', device=device_ID))
+
+			if eds[device_ID].joined == True:
+				channel.change_mode(simulation_clock, 'TX_START')
 
 		elif event.event_type == 'TX_END':
 
@@ -84,12 +129,9 @@ def main():
 
 			eds[device_ID].change_mode(simulation_clock, 'TX_END')
 
-			# Log the time of the transmission just received
-			current_tx_start_time = eds[device_ID].nextTX
-			eds[device_ID].uplink_times.append(current_tx_start_time)
+			current_tx_start_time = eds[device_ID].uplink_times[-1]
+			nextTX_without_drift = current_tx_start_time+eds[device_ID].period
 
-			# Device updates its next transmission time
-			eds[device_ID].update_next_tx_time()
 			
 			# UPDATE THE ACCUMULATED TIME TRANSMITTED
 			
@@ -100,27 +142,41 @@ def main():
 				requested_period = eds[device_ID].period
 
 				# Find available time slot and assign device the available slot
-				slot_index, periods_from_now = assign_to_time_slot(eds, time_slot_assignments, requested_period, period, simulation_clock)
+				slot_index, periods_from_now, incompatible_with_slot = assign_to_time_slot(eds, time_slot_assignments, requested_period, period, simulation_clock, incompatible_with_slot, GI)
+				
 				time_slot_assignments[slot_index].append({"device_id": device_ID, "period": requested_period})
 
 				# Time when schedule starts over next period
 				schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
-				
-				# Global time of assigned slot: Next period start + time slot offset in the period + number of periods to wait
-				start_time = schedule_start_next_period + time_slots_start_times[slot_index] + (periods_from_now*period)
 
-				# Calculate time shift and adjust transmission time of device
-				time_shift = start_time - eds[device_ID].nextTX
+				time_slots_start_time = 0
+				if (simulation_clock % period) < time_slots_start_times[slot_index]:
+					time_slot_start_time = schedule_start_next_period - period + time_slots_start_times[slot_index]
+				else:
+					time_slot_start_time = schedule_start_next_period + time_slots_start_times[slot_index]
+
+				offset = periods_from_now*period
+				start_time = time_slot_start_time + offset
+
+				# Calculate time shift and adjust transmission time of device using nextTX_without_drift (which is exactly one period from the transmission just received)
+				time_shift = start_time - nextTX_without_drift
 				eds[device_ID].adjust_tx_time(time_shift)
 
-				#print(device_ID, eds[device_ID].nextTX/period)
+				#if slot_index == 2:
+					#print("main",device_ID, eds[device_ID].nextTX/period, time_slots_start_times[slot_index]/period)
+					#print("main",device_ID, eds[device_ID].nextTX)
 
 				# Add events to queue
 				heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
-				heapq.heappush(event_queue, Event(time=current_tx_start_time+tx_duration+rx_delay, event_type='RX_START', device=device_ID))
+				
+				# No RX_START because we simplify join procedure (Problems with RX events colliding since device already has joined when TX has ended. We would also change joined attribute of device after RX_END but this also has problem since new TX_START can be scheduled into time slot before RX_END which makes that TX_START look like it came from a non-joined device)
+				#heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
 
 			# If data uplink
 			else:
+				# This should only be called when (eds[device_ID].joined == True) since join messages are collision free and not counted for in throughpt
+				channel.change_mode(simulation_clock, 'TX_END')
+
 				# If drift correction is necessary. Since period_until_downlink was updated to 1 last iteration then it is actually 0 now
 				if eds[device_ID].period_until_downlink == 1:
 
@@ -140,7 +196,7 @@ def main():
 
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
-					heapq.heappush(event_queue, Event(time=current_tx_start_time+tx_duration+rx_delay, event_type='RX_START', device=device_ID))
+					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
 
 					# The uplink times up until now cannot be used to calculate period_until_down when drift is corrected
 					eds[device_ID].uplink_times = []
@@ -150,6 +206,9 @@ def main():
 					# If two or more uplinks have been received since drift correction
 					if len(eds[device_ID].uplink_times) >= 2:
 
+						#if simulation_clock < period*4 and device_slot >= 0 and device_slot <= 7:
+							#print(device_slot, eds[device_ID].period_until_downlink)
+						
 						# CALCULATE DRIFT GIVEN LAST TWO UPLINK TIMES AND THE CORRECT PERIOD TIME
 
 						# Get time slot index value
@@ -170,32 +229,38 @@ def main():
 
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
-					heapq.heappush(event_queue, Event(time=current_tx_start_time+tx_duration+rx_delay, event_type='SHORT_RX_START', device=device_ID))
+					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
 		elif event.event_type == 'RX_START':	
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
-			heapq.heappush(event_queue, Event(time=simulation_clock+rx_duration, event_type='RX_END', device=device_ID))
+			channel.change_mode(simulation_clock, 'RX_START')
+			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_duration), event_type='RX_END', device=device_ID))
 
 		elif event.event_type == 'RX_END':
 			eds[device_ID].change_mode(simulation_clock, 'RX_END')
+			channel.change_mode(simulation_clock, 'RX_END')
 
 		elif event.event_type == 'SHORT_RX_START':
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
-			heapq.heappush(event_queue, Event(time=simulation_clock+rx_no_preamble, event_type='RX_END', device=device_ID))
-
-		elif event.event_type == 'SHORT_RX_END':
-			eds[device_ID].change_mode(simulation_clock, 'RX_END')
+			channel.change_mode(simulation_clock, 'RX_START')
+			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_no_preamble), event_type='RX_END', device=device_ID))
 
 
 	for ed in eds:
 		ed.change_mode(sim_end,'SIM_END')
 		#print(ed.energy_consumption)
 
-	for slot in time_slot_assignments:
+	print(channel.accumulated_uplink_time)
+
+	'''for i, slot in enumerate(time_slot_assignments):
 		if slot:
-			print("\nSlot:")
+			print(f"\nSlot: {i}")
 			for dev in slot:
-				print("Dev", dev['device_id'], "Period", dev['period']/period)
+				print("Dev", dev['device_id'], "Period", dev['period']/period)'''
 
 if __name__=="__main__":
+	#pr = cProfile.Profile()
+	#pr.enable()
 	main()
+	#pr.disable()
+	#pr.dump_stats("profile_output.prof")
