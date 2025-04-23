@@ -15,29 +15,78 @@ def lcm_multiple(lst):
 		result = lcm(result, val)
 	return result
 
-def is_compatible(slot_idx, eds, already_assigned, new_period, min_period, current_time, GI):
-	dev_ids = []
-	periods = []
+def get_offsets_of_time_slot(slot_idx, eds, already_assigned, start_times, all_periods, min_period, current_time, GI):
+	periods_in = -1
+	
+	# TODO: Check if it should be <= instead
+	if (current_time%min_period) < start_times[slot_idx]:
+		periods_in = math.floor(current_time/min_period)
+	else:
+		periods_in = math.floor(current_time/min_period) + 1
+
+	next_slot_start_time = periods_in*min_period + start_times[slot_idx]
+
+	max_offset = int(max(all_periods)/min_period)
+
 	offsets = []
+	dev_ids = []
+
+	# Loop over all devices that are already in slot
 	for device in already_assigned:
-		periods.append(device["period"])
 		dev_id = device["device_id"]
+		dev_ids.append(dev_id)
+
+		# Find the device object using its ID. The object's nextTX attribute will be used to calculate offset
+		#for ed in eds:
+		ed = eds[dev_id]
+
+		#if slot_idx==1:
+			#print(dev_id, ed.nextTX)
 
 		# Find number of periods until devices use the time slot again (offset)
-		for ed in eds:
-			if ed.ID == dev_id:
-				dev_ids.append(dev_id)
-				#if slot_idx == 2:
-				#	print(ed.ID, (ed.nextTX+(GI/2)-current_time) / min_period, ed.nextTX, current_time)
+		# Offset is found using next_slot_start_time. If (nextTX == next_slot_start_time) then offset=0
+		for offset in range(max_offset+1):
 
-				# If transmission happens next time slot then offset should be 0
-				# Since nextTX can be affected by drift, then the difference between nextTX and current_time can result in an offset that is 1 lower than it should
-				offset = math.floor((ed.nextTX+(GI/2)-current_time) / min_period)
+			beginning_time_of_slot_given_offset = offset*min_period+next_slot_start_time
+			#print(beginning_time_of_slot_given_offset, offset, min_period, next_slot_start_time)
+			#print(ed.nextTX, offset, (beginning_time_of_slot_given_offset - GI/2), (beginning_time_of_slot_given_offset + GI/2) )
+			
+			#if ed.ID==1430:
+			#	print("1430", ed.nextTX/min_period, current_time/min_period)
+			#if ed.nextTX >= (beginning_time_of_slot_given_offset - GI/2) and ed.nextTX <= (beginning_time_of_slot_given_offset + GI/2):
+			if ed.nextTX >= (beginning_time_of_slot_given_offset - min_period/2) and ed.nextTX <= (beginning_time_of_slot_given_offset + min_period/2):
+				#if ed.ID == 1664 or ed.ID == 489 or ed.ID == 2704 or ed.ID == 2745:
+				#	print(ed.ID, offset, ed.nextTX/min_period, current_time/min_period, next_slot_start_time/min_period)
+				#if slot_idx==1:
+					#print(ed.ID, offset)
 				offsets.append(offset)
+				break
+			elif (ed.nextTX - current_time) <= GI/2:
+				#print("yo",ed.period/min_period, ed.ID, slot_idx)
+				#print(ed.ID, ed.period/min_period)
+				offsets.append(int(ed.period/min_period)-1)
+				break
 
+	return offsets, dev_ids
+
+def is_compatible(slot_idx, eds, already_assigned, start_times, new_period, min_period, current_time, GI):
+	periods = []
+
+	for device in already_assigned:
+		periods.append(device["period"])
+
+	# Make list with periods of devices that are already in slot and the period of the joining device
 	all_periods = periods + [new_period]
+
+	# Get offsets and device ids of devices already in the slot
+	offsets, dev_ids = get_offsets_of_time_slot(slot_idx, eds, already_assigned, start_times, all_periods, min_period, current_time, GI)
+
 	schedule_lcm = lcm_multiple(all_periods)
 	lcm_in_min_periods = round(schedule_lcm / min_period)
+
+	if lcm_in_min_periods > 10000:
+		return -1
+
 	availability_schedule = [True] * (2*lcm_in_min_periods)
 
 	test = [True] * (2*lcm_in_min_periods)
@@ -47,8 +96,8 @@ def is_compatible(slot_idx, eds, already_assigned, new_period, min_period, curre
 		t = offset
 		while t < 2*lcm_in_min_periods:
 			availability_schedule[t] = False  # Mark as occupied
-			if slot_idx == 2:
-				test[t] = dev_id
+			#if slot_idx == 114:
+			#	test[t] = dev_id
 			t += round(period/min_period)
 
 	# Offset should not be higher than period since no compatible schedule exists in that case
@@ -64,13 +113,62 @@ def is_compatible(slot_idx, eds, already_assigned, new_period, min_period, curre
 				break
 
 		if fits:
-			#if slot_idx == 2:
-			#	print(offset, dev_ids, offsets, test, "\n")
+			#if slot_idx == 114:
+				#print(offset, dev_ids, offsets, periods, test, "\n")
 			return offset  # Found a valid offset
 
 	return -1  # No valid offset found
 
-def assign_to_time_slot(eds, assigned_slots, requested_period, min_period, current_time, incompatible_with_slot, GI):
+def find_collisions_free_slot_for_x_time(slot_idx, eds, already_assigned, start_times, new_period, time_compatible, min_period, current_time, GI):
+	#for slot in time_slot_assignments:
+	periods = []
+
+	for device in already_assigned:
+		periods.append(device["period"])
+
+	# Make list with periods of devices that are already in slot and the period of the joining device
+	all_periods = periods + [new_period]
+
+	# Get offsets and device ids of devices already in the slot
+	offsets, dev_ids = get_offsets_of_time_slot(slot_idx, eds, already_assigned, start_times, all_periods, min_period, current_time, GI)
+
+	# Number of minimum periods before drift becomes are problem
+	number_of_collision_free_periods = math.ceil(time_compatible / min_period)
+
+	availability_schedule = [True] * number_of_collision_free_periods
+
+	# Update the availability_schedule list. If device with specific offset and period plans to send in a time slot then mark as unavailable
+	for offset, period in zip(offsets, periods):
+		t = offset
+		while t < number_of_collision_free_periods:
+			availability_schedule[t] = False  # Mark as occupied
+			t += round(period/min_period)
+
+	before_availability_schedule = availability_schedule
+	# Offset should not be higher than period since no compatible schedule exists in that case
+	for offset in range(round(new_period/min_period)):
+		# Skip if starting offset is already occupied
+		if not availability_schedule[offset]:
+			continue
+
+		fits = True
+		for t in range(offset, number_of_collision_free_periods, round(new_period/min_period)):
+			if not availability_schedule[t]:
+				fits = False
+				break
+
+		if fits:
+			print('Last resort. Period', round(new_period/min_period), "Offset", offset)
+			print(before_availability_schedule)
+			print(availability_schedule,"\n")
+			#if slot_idx == 114:
+				#print(offset, dev_ids, offsets, periods, test, "\n")
+			return offset  # Found a valid offset
+
+	return -1  # No valid offset found
+
+
+def assign_to_time_slot(device_ID, eds, assigned_slots, start_times, requested_period, time_compatible, min_period, current_time, incompatible_with_slot, GI):
 	# First check if period is compatible with other periods already assigned
 	for slot_idx in range(len(assigned_slots)):
 		
@@ -81,7 +179,7 @@ def assign_to_time_slot(eds, assigned_slots, requested_period, min_period, curre
 				break
 
 		if assigned_slots[slot_idx] and incompatible == False:
-			offset = is_compatible(slot_idx, eds, assigned_slots[slot_idx], requested_period, min_period, current_time, GI)
+			offset = is_compatible(slot_idx, eds, assigned_slots[slot_idx], start_times, requested_period, min_period, current_time, GI)
 			
 			# If it is compatible
 			if offset != -1:
@@ -95,8 +193,18 @@ def assign_to_time_slot(eds, assigned_slots, requested_period, min_period, curre
 		if not assigned_slots[slot_idx]:
 			return slot_idx, 0, incompatible_with_slot
 
+
+	for slot_idx in range(len(assigned_slots)):		
+			offset = find_collisions_free_slot_for_x_time(slot_idx, eds, assigned_slots[slot_idx], start_times, requested_period, time_compatible, min_period, current_time, GI)
+			
+			# If it is compatible
+			if offset != -1:
+				print(device_ID, slot_idx)
+				return slot_idx, offset, incompatible_with_slot
+
 	print("NO TIME SLOTS AVAILABLE.")
 	sys.exit(0)
+
 
 def calc_drift_correction_bound(GI, already_drifted, drift_ppm):
 	drift_per_us = drift_ppm / 1_000_000

@@ -5,20 +5,18 @@ from classes import *
 from helper import *
 import cProfile
 
-ps = [4,5,6,7,8,9,10,11,12,13,14,15,16]
-#ps = [4,5,6]
-#ps = [8]
+#ps = [4,5,6,7,8,9,10,11,12,13,14,15,16]
+
 drift_directions = [1,-1]
-#drift_directions = [1]
 def create_end_devices(n, period):
-	random.seed(99)
 	join_times = [random.randint(1, period) for _ in range(n)]
+	ps = [random.randint(20, 100) for _ in range(n)]
+	#ps = [60 for _ in range(n)]
 	eds = []
 	for i in range(n):
 		join_time = join_times[i]
-		ed = ED(i, period*ps[i%len(ps)], join_time, drift_directions[i%2])
-		#ed = ED(i, period*ps[i%len(ps)], join_time, drift_directions[0])
-		#ed = ED(i, period, join_time, drift_directions[i%2])
+		ed = ED(i, period*ps[i], join_time, drift_directions[i%2])
+		#ed = ED(i, period*ps[i%len(ps)], join_time, drift_directions[i%2])
 		eds.append(ed)
 	return eds
 
@@ -49,13 +47,16 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 	return time_slots_start_times, time_slot_assignments, event_queue, incompatible_with_slot
 
 
-n = 1550
-period = 1_000_000*60*30
+# n = 2013 is close to max n for 5 minute min_period and periods ps = [random.randint(20, 100) for _ in range(n)]
+n = 2050
+#n = 3660
+period = 1_000_000*60*5
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5
 rx_delay = 1_000_000
 rx_no_preamble = int(1_000_000*0.3)								# 0.3 sec (approx: 9 symbols) rx window. 6 preamble symbols needs to be received in order to lock into signal
 slot_duration = tx_duration + rx_delay + rx_duration
+rescheduling_bound = 1_000_000*60*60*12
 
 ''' TODO
 
@@ -69,14 +70,13 @@ slot_duration = tx_duration + rx_delay + rx_duration
 def main():
 	channel = Channel()
 	eds = create_end_devices(n, period)
-	slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=1_000_000*60*60*12)
+	slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=rescheduling_bound)
 	print("slot_count:", slot_count, "\tGI:", GI)
 	time_slots_start_times, time_slot_assignments, event_queue, incompatible_with_slot = init_schedule(slot_count, slot_duration, GI, eds)
 	sim_end = 1_000_000*60*60*24
 	simulation_clock = 0
 
-
-	#heapq.heappush(event_queue, Event(time=period*47, event_type='SHOW_SCHEDULE_ONE_SLOT', device=-1, time_slot=2))
+	#heapq.heappush(event_queue, Event(time=period*47, event_type='SHOW_SCHEDULE_ONE_SLOT', device=-1, time_slot=3))
 	#heapq.heappush(event_queue, Event(time=period*8, event_type='SHOW_SCHEDULE_DRIFT_PERSPECTIVE', device=-1, time_slot=2))
 	#heapq.heappush(event_queue, Event(time=period*24, event_type='SHOW_SCHEDULE_DRIFT_PERSPECTIVE', device=-1, time_slot=2))
 
@@ -86,9 +86,13 @@ def main():
 		device_ID = event.device
 
 		device_slot = get_device_time_slot(device_ID, time_slot_assignments)
+		
 		#if simulation_clock > period:
 		#print(event.event_type, " \t", device_slot, device_ID, simulation_clock/period)
 		
+		#if device_ID == 1799:
+		#	print(event.event_type, " \t", device_slot, device_ID, simulation_clock/period)
+
 		#if device_slot == 2:
 			#print(simulation_clock/period ,time_slot_assignments[2],"\n")
 			#print(event.event_type, device_slot, device_ID, simulation_clock, time_slot_assignments[device_slot], "\n")
@@ -142,7 +146,7 @@ def main():
 				requested_period = eds[device_ID].period
 
 				# Find available time slot and assign device the available slot
-				slot_index, periods_from_now, incompatible_with_slot = assign_to_time_slot(eds, time_slot_assignments, requested_period, period, simulation_clock, incompatible_with_slot, GI)
+				slot_index, periods_from_now, incompatible_with_slot = assign_to_time_slot(device_ID, eds, time_slot_assignments, time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
 				
 				time_slot_assignments[slot_index].append({"device_id": device_ID, "period": requested_period})
 
@@ -162,9 +166,10 @@ def main():
 				time_shift = start_time - nextTX_without_drift
 				eds[device_ID].adjust_tx_time(time_shift)
 
-				#if slot_index == 2:
+				#if slot_index == 1:
 					#print("main",device_ID, eds[device_ID].nextTX/period, time_slots_start_times[slot_index]/period)
-					#print("main",device_ID, eds[device_ID].nextTX)
+					#print("main",device_ID, eds[device_ID].nextTX, eds[device_ID].period/period)
+
 
 				# Add events to queue
 				heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
@@ -214,6 +219,10 @@ def main():
 						# Get time slot index value
 						device_slot = get_device_time_slot(device_ID, time_slot_assignments)
 
+						#if device_slot == 1:
+						#	print("main",device_ID, eds[device_ID].nextTX/period, time_slots_start_times[slot_index]/period)
+							#print("main", device_ID, eds[device_ID].nextTX/period, eds[device_ID].period/period)
+
 						#print(device_slot, device_ID, eds[device_ID].period/period, (eds[device_ID].nextTX-simulation_clock)/period, simulation_clock/period)
 
 						# How much time has the device drifted (absolute drift) since it was exactly on the time slot
@@ -250,17 +259,55 @@ def main():
 		ed.change_mode(sim_end,'SIM_END')
 		#print(ed.energy_consumption)
 
-	print(channel.accumulated_uplink_time)
 
-	'''for i, slot in enumerate(time_slot_assignments):
+	slot_utilization = []
+	for slot in range(slot_count):
+		slot_utilization.append(0)
+
+	fully_utilized_slots = 0
+
+	for i, slot in enumerate(time_slot_assignments):
+
 		if slot:
-			print(f"\nSlot: {i}")
+			periods = []
 			for dev in slot:
-				print("Dev", dev['device_id'], "Period", dev['period']/period)'''
+				periods.append(round(dev['period']/period))
+
+			lcm = lcm_multiple(periods)
+			utilized_slots_in_lcm = 0
+
+			for p in periods:
+				utilized_slots_in_lcm += int(lcm/p)
+
+			util = utilized_slots_in_lcm / lcm
+			slot_utilization[i] = util
+			if util == 1:
+				fully_utilized_slots += 1
+
+			print(f"\nSlot {i} with utililzation {util}")
+			for dev in slot:
+				print("Dev", dev['device_id'], "Period", dev['period']/period)
+
+	overall_utilization = 0
+	for slot in slot_utilization:
+		overall_utilization += slot/slot_count
+
+	all_periods_summed = 0
+	for ed in eds:
+		all_periods_summed += ed.period/period
+	avg_period = all_periods_summed/n
+
+	print("\nOverall utilization:", overall_utilization)
+	print("Fully utilized slots:", fully_utilized_slots)
+	print(channel.accumulated_uplink_time, 1_000_000*60*60*24, channel.accumulated_uplink_time/(1_000_000*60*60*24))
+	print("Average period",avg_period)
+
 
 if __name__=="__main__":
-	#pr = cProfile.Profile()
-	#pr.enable()
+	random.seed(99)
+
+	pr = cProfile.Profile()
+	pr.enable()
 	main()
-	#pr.disable()
-	#pr.dump_stats("profile_output.prof")
+	pr.disable()
+	pr.dump_stats("profile_output.prof")
