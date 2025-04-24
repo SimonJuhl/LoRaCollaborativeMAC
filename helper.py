@@ -194,13 +194,13 @@ def assign_to_time_slot(device_ID, eds, assigned_slots, start_times, requested_p
 			return slot_idx, 0, incompatible_with_slot
 
 
-	for slot_idx in range(len(assigned_slots)):		
+	'''for slot_idx in range(len(assigned_slots)):		
 			offset = find_collisions_free_slot_for_x_time(slot_idx, eds, assigned_slots[slot_idx], start_times, requested_period, time_compatible, min_period, current_time, GI)
 			
 			# If it is compatible
 			if offset != -1:
-				print(device_ID, slot_idx)
-				return slot_idx, offset, incompatible_with_slot
+				#print(device_ID, slot_idx)
+				return slot_idx, offset, incompatible_with_slot'''
 
 	print("NO TIME SLOTS AVAILABLE.")
 	sys.exit(0)

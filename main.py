@@ -48,8 +48,7 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 
 
 # n = 2013 is close to max n for 5 minute min_period and periods ps = [random.randint(20, 100) for _ in range(n)]
-n = 2050
-#n = 3660
+n = 1950
 period = 1_000_000*60*5
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5

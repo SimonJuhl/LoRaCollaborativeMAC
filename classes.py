@@ -40,6 +40,9 @@ class Channel:
 						tx_duration = current_time - self.transmission_started
 						self.update_uplink_time(tx_duration)
 					self.transmission_started = -1
+				else:
+					# ADD RETURN.
+					pass
 
 
 
