@@ -17,11 +17,13 @@ class Channel:
 	def update_uplink_time(self, tx_duration):
 		self.accumulated_uplink_time += tx_duration
 
+	# Returns collision boolean
 	def change_mode(self, current_time, event):
 		if self.ongoing_transmissions == 0:
 			if event == 'TX_START':
 				self.ongoing_transmissions += 1
 				self.transmission_started = current_time
+				return False
 			elif event == 'TX_END':
 				print("ERROR: CHANNEL IDLE")
 				sys.exit(0)
@@ -29,8 +31,9 @@ class Channel:
 			if event == 'TX_START':
 				self.ongoing_transmissions += 1
 				self.collision_detected = True
-				print("====================> COLLISION! Handle case", self.ongoing_transmissions)
-				sys.exit(0)
+				#print("====================> COLLISION! Handle case", self.ongoing_transmissions)
+				return True
+				#sys.exit(0)
 			elif event == 'TX_END':
 				self.ongoing_transmissions -= 1
 				if self.ongoing_transmissions == 0:
@@ -40,18 +43,20 @@ class Channel:
 						tx_duration = current_time - self.transmission_started
 						self.update_uplink_time(tx_duration)
 					self.transmission_started = -1
+					return False
 				else:
-					# ADD RETURN.
-					pass
+					# Collision
+					return True
 
 
 
 class Event:
-	def __init__(self, time, event_type, device, time_slot=-1):
+	def __init__(self, time, event_type, device, time_slot=-1, collision=False):
 		self.time = time
 		self.event_type = event_type
 		self.device = device
 		self.time_slot = time_slot
+		self.collision = collision
 
 	def __lt__(self, other):  # For heapq to sort by time
 		return self.time < other.time

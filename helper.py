@@ -1,3 +1,4 @@
+import random
 import math
 import sys
 import matplotlib.pyplot as plt
@@ -168,7 +169,7 @@ def find_collisions_free_slot_for_x_time(slot_idx, eds, already_assigned, start_
 	return -1  # No valid offset found
 
 
-def assign_to_time_slot(device_ID, eds, assigned_slots, start_times, requested_period, time_compatible, min_period, current_time, incompatible_with_slot, GI):
+def assign_to_time_slot_optimized(device_ID, eds, assigned_slots, start_times, requested_period, time_compatible, min_period, current_time, incompatible_with_slot, GI):
 	# First check if period is compatible with other periods already assigned
 	for slot_idx in range(len(assigned_slots)):
 		
@@ -204,6 +205,9 @@ def assign_to_time_slot(device_ID, eds, assigned_slots, start_times, requested_p
 
 	print("NO TIME SLOTS AVAILABLE.")
 	sys.exit(0)
+
+def calculate_time_slot_collisions(one_slot_assignments, eds):
+	print(one_slot_assignments)
 
 
 def calc_drift_correction_bound(GI, already_drifted, drift_ppm):

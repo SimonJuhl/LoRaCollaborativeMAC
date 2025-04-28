@@ -48,7 +48,7 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 
 
 # n = 2013 is close to max n for 5 minute min_period and periods ps = [random.randint(20, 100) for _ in range(n)]
-n = 1950
+n = 100 # 1950
 period = 1_000_000*60*5
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5
@@ -56,6 +56,7 @@ rx_delay = 1_000_000
 rx_no_preamble = int(1_000_000*0.3)								# 0.3 sec (approx: 9 symbols) rx window. 6 preamble symbols needs to be received in order to lock into signal
 slot_duration = tx_duration + rx_delay + rx_duration
 rescheduling_bound = 1_000_000*60*60*12
+version = 'random'  #'random'
 
 ''' TODO
 
@@ -105,7 +106,8 @@ def main():
 			show_schedule_timeline(eds, time_slot_assignments, time_slots_start_times, event_queue, event.time_slot, slot_count, period)
 
 		elif event.event_type == 'TX_START':
-			
+
+			# TODO: We should not log the transmission time if a collision occur. But for now we will go with this simplification
 			# Log the starting time of the transmission
 			current_tx_time = eds[device_ID].nextTX
 			eds[device_ID].uplink_times.append(current_tx_time)
@@ -114,10 +116,18 @@ def main():
 			eds[device_ID].update_next_tx_time()
 
 			eds[device_ID].change_mode(simulation_clock, 'TX_START')
-			heapq.heappush(event_queue, Event(time=int(current_tx_time+tx_duration), event_type='TX_END', device=device_ID))
 
+			collision = False
 			if eds[device_ID].joined == True:
-				channel.change_mode(simulation_clock, 'TX_START')
+				collision = channel.change_mode(simulation_clock, 'TX_START')
+
+			# If the channel object returns a collision then the tx starts, then the tx will not be received.
+			# This means that the network server will not check if a drift correction needs to be performed.
+			if collision:
+				heapq.heappush(event_queue, Event(time=int(current_tx_time+tx_duration), event_type='TX_END', device=device_ID, time_slot=-1, collision=True))
+			else:
+				heapq.heappush(event_queue, Event(time=int(current_tx_time+tx_duration), event_type='TX_END', device=device_ID))
+
 
 		elif event.event_type == 'TX_END':
 
@@ -145,9 +155,14 @@ def main():
 				requested_period = eds[device_ID].period
 
 				# Find available time slot and assign device the available slot
-				slot_index, periods_from_now, incompatible_with_slot = assign_to_time_slot(device_ID, eds, time_slot_assignments, time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
+				if version == 'optimized':
+					slot_index, periods_from_now, incompatible_with_slot = assign_to_time_slot_optimized(device_ID, eds, time_slot_assignments, time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
+				elif version == 'random':
+					periods_from_now = 0
+					slot_index = random.randint(0, slot_count-1)
 				
 				time_slot_assignments[slot_index].append({"device_id": device_ID, "period": requested_period})
+				calculate_time_slot_collisions(time_slot_assignments[slot_index], eds)
 
 				# Time when schedule starts over next period
 				schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
@@ -179,10 +194,15 @@ def main():
 			# If data uplink
 			else:
 				# This should only be called when (eds[device_ID].joined == True) since join messages are collision free and not counted for in throughpt
-				channel.change_mode(simulation_clock, 'TX_END')
+				collision = channel.change_mode(simulation_clock, 'TX_END')
+
+				# If the beginning of this transmission collided or if the end of this transmission collided with another tx
+				if event.collision or collision:
+					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+					heapq.heappush(event_queue, Event(time=int(eds[device_ID].uplink_times[-1]+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
 				# If drift correction is necessary. Since period_until_downlink was updated to 1 last iteration then it is actually 0 now
-				if eds[device_ID].period_until_downlink == 1:
+				elif eds[device_ID].period_until_downlink == 1:
 
 					eds[device_ID].period_until_downlink = -1
 					
@@ -283,9 +303,9 @@ def main():
 			if util == 1:
 				fully_utilized_slots += 1
 
-			print(f"\nSlot {i} with utililzation {util}")
+			'''print(f"\nSlot {i} with utililzation {util}")
 			for dev in slot:
-				print("Dev", dev['device_id'], "Period", dev['period']/period)
+				print("Dev", dev['device_id'], "Period", dev['period']/period)'''
 
 	overall_utilization = 0
 	for slot in slot_utilization:
@@ -297,9 +317,9 @@ def main():
 	avg_period = all_periods_summed/n
 
 	print("\nOverall utilization:", overall_utilization)
-	print("Fully utilized slots:", fully_utilized_slots)
+	#print("Fully utilized slots:", fully_utilized_slots)
 	print(channel.accumulated_uplink_time, 1_000_000*60*60*24, channel.accumulated_uplink_time/(1_000_000*60*60*24))
-	print("Average period",avg_period)
+	#print("Average period",avg_period)
 
 
 if __name__=="__main__":
