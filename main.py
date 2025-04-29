@@ -48,7 +48,7 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 
 
 # n = 2013 is close to max n for 5 minute min_period and periods ps = [random.randint(20, 100) for _ in range(n)]
-n = 100 # 1950
+n = 200 # 1950
 period = 1_000_000*60*5
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5
@@ -85,7 +85,7 @@ def main():
 		simulation_clock = event.time
 		device_ID = event.device
 
-		device_slot = get_device_time_slot(device_ID, time_slot_assignments)
+		#device_slot, current_period = get_device_time_slot(device_ID, time_slot_assignments, simulation_clock, period)
 		
 		#if simulation_clock > period:
 		#print(event.event_type, " \t", device_slot, device_ID, simulation_clock/period)
@@ -162,7 +162,6 @@ def main():
 					slot_index = random.randint(0, slot_count-1)
 				
 				time_slot_assignments[slot_index].append({"device_id": device_ID, "period": requested_period})
-				calculate_time_slot_collisions(time_slot_assignments[slot_index], eds)
 
 				# Time when schedule starts over next period
 				schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
@@ -180,6 +179,15 @@ def main():
 				time_shift = start_time - nextTX_without_drift
 				eds[device_ID].adjust_tx_time(time_shift)
 
+				#if slot_index == 54:
+				#	for dev in time_slot_assignments[slot_index]:
+				#		print(dev['device_id'], dev['period']/period, eds[dev['device_id']].nextTX/period)
+				#	print("\n")
+
+				calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
+
+				#print(simulation_clock/period, slot_index, eds[device_ID].nextTX/period)
+
 				#if slot_index == 1:
 					#print("main",device_ID, eds[device_ID].nextTX/period, time_slots_start_times[slot_index]/period)
 					#print("main",device_ID, eds[device_ID].nextTX, eds[device_ID].period/period)
@@ -195,20 +203,25 @@ def main():
 			else:
 				# This should only be called when (eds[device_ID].joined == True) since join messages are collision free and not counted for in throughpt
 				collision = channel.change_mode(simulation_clock, 'TX_END')
-
+				
+				# Get time slot index value which device is assigned to
+				device_slot, current_period = get_device_time_slot(device_ID, time_slot_assignments, simulation_clock, period)
+				
 				# If the beginning of this transmission collided or if the end of this transmission collided with another tx
 				if event.collision or collision:
+					#print("slot",device_slot, "ID", device_ID, "is colliding at time", simulation_clock, event.event_type, event.time, eds[device_ID].nextTX)
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(eds[device_ID].uplink_times[-1]+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
+
+				elif eds[device_ID].global_period_rescheduling == current_period:
+					print(device_slot, device_ID, eds[device_ID].global_period_rescheduling, current_period)
 
 				# If drift correction is necessary. Since period_until_downlink was updated to 1 last iteration then it is actually 0 now
 				elif eds[device_ID].period_until_downlink == 1:
 
 					eds[device_ID].period_until_downlink = -1
 					
-					# Get time slot index value which device is assigned to
-					device_slot = get_device_time_slot(device_ID, time_slot_assignments)
-
+					#print(current_period, simulation_clock/period)
 					#print(device_slot, device_ID, eds[device_ID].period/period, (eds[device_ID].nextTX-simulation_clock)/period, simulation_clock/period, "check")
 
 					# TODO: REVISIT THIS. DON'T THINK IT'S CORRECT ANYMORE
@@ -234,9 +247,6 @@ def main():
 							#print(device_slot, eds[device_ID].period_until_downlink)
 						
 						# CALCULATE DRIFT GIVEN LAST TWO UPLINK TIMES AND THE CORRECT PERIOD TIME
-
-						# Get time slot index value
-						device_slot = get_device_time_slot(device_ID, time_slot_assignments)
 
 						#if device_slot == 1:
 						#	print("main",device_ID, eds[device_ID].nextTX/period, time_slots_start_times[slot_index]/period)

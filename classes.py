@@ -70,6 +70,7 @@ class ED:
 		self.drift_direction = drift_direction
 		self.drift = drift
 		self.period_until_downlink = -1
+		self.global_period_rescheduling = -1
 		self.uplink_times = []
 		self.joined = False
 
