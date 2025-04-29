@@ -48,7 +48,7 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 
 
 # n = 2013 is close to max n for 5 minute min_period and periods ps = [random.randint(20, 100) for _ in range(n)]
-n = 200 # 1950
+n = 2000 # 1950
 period = 1_000_000*60*5
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5
@@ -213,8 +213,41 @@ def main():
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(eds[device_ID].uplink_times[-1]+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
+					# If the collision hindered the rescheduling of a device, then recalculate the rescheduling times
+					if eds[device_ID].global_period_rescheduling == current_period:
+						calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
+
 				elif eds[device_ID].global_period_rescheduling == current_period:
-					print(device_slot, device_ID, eds[device_ID].global_period_rescheduling, current_period)
+					# Remove from time_slot_assignments
+
+					for index, device in enumerate(time_slot_assignments[device_slot]):
+						if device['device_id'] == device_ID:
+							#print(time_slot_assignments[device_slot][index])
+							time_slot_assignments[device_slot].pop(index)
+
+					slot_index = random.randint(0, slot_count-1)
+					periods_from_now = 0
+
+					time_slot_assignments[slot_index].append({"device_id": device_ID, "period": eds[device_ID].period})
+
+					# Time when schedule starts over next period
+					schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
+
+					time_slots_start_time = 0
+					if (simulation_clock % period) < time_slots_start_times[slot_index]:
+						time_slot_start_time = schedule_start_next_period - period + time_slots_start_times[slot_index]
+					else:
+						time_slot_start_time = schedule_start_next_period + time_slots_start_times[slot_index]
+
+					offset = periods_from_now*period
+					start_time = time_slot_start_time + offset
+
+					# Calculate time shift and adjust transmission time of device using nextTX_without_drift (which is exactly one period from the transmission just received)
+					time_shift = start_time - nextTX_without_drift
+					eds[device_ID].adjust_tx_time(time_shift)
+
+					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
+					#print(device_slot, device_ID, eds[device_ID].global_period_rescheduling, current_period)
 
 				# If drift correction is necessary. Since period_until_downlink was updated to 1 last iteration then it is actually 0 now
 				elif eds[device_ID].period_until_downlink == 1:
@@ -329,6 +362,7 @@ def main():
 	print("\nOverall utilization:", overall_utilization)
 	#print("Fully utilized slots:", fully_utilized_slots)
 	print(channel.accumulated_uplink_time, 1_000_000*60*60*24, channel.accumulated_uplink_time/(1_000_000*60*60*24))
+	print("Number of collisions:", channel.number_of_collisions)
 	#print("Average period",avg_period)
 
 

@@ -195,7 +195,7 @@ def assign_to_time_slot_optimized(device_ID, eds, assigned_slots, start_times, r
 	sys.exit(0)
 
 def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, start_times, requested_period, time_compatible, min_period, current_time, incompatible_with_slot, GI):
-	#print(one_slot_assignments)
+	#print("Calculate collisions time", current_time/min_period)
 	periods = []
 
 	for device in one_slot_assignments:
@@ -217,13 +217,16 @@ def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, start_ti
 		else:
 			number_of_periods_to_check_for_collisions = lcm_in_min_periods
 
-		device_schedules = []
+		'''device_schedules = []
 		#print(cpy_slot_assignments)
 		for d in range(len(cpy_slot_assignments)):
 			#print(periods[d]/min_period)
 			device_schedules.append([])
 			for p in range(number_of_periods_to_check_for_collisions):
-				device_schedules[d].append(True)
+				device_schedules[d].append(True)'''
+
+		device_schedules = [[True] * number_of_periods_to_check_for_collisions for _ in range(len(cpy_slot_assignments))]
+
 
 		#print(offsets, device_schedules)
 		#for d in device_schedules:

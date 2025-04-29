@@ -9,6 +9,7 @@ class Channel:
 		self.transmission_started = -1
 		self.collision_detected = False
 		self.accumulated_uplink_time = 0
+		self.number_of_collisions = 0
 
 
 	# TODO: Add throughput code
@@ -31,6 +32,7 @@ class Channel:
 			if event == 'TX_START':
 				self.ongoing_transmissions += 1
 				self.collision_detected = True
+				self.number_of_collisions += 1
 				#print("====================> COLLISION! Handle case", self.ongoing_transmissions)
 				return True
 				#sys.exit(0)
