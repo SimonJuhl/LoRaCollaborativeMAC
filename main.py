@@ -48,7 +48,6 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 
 
 # n = 2013 is close to max n for 5 minute min_period and periods ps = [random.randint(20, 100) for _ in range(n)]
-n = 2000 # 1950
 period = 1_000_000*60*5
 tx_duration = 1_000_000*1.5
 rx_duration = 1_000_000*1.5
@@ -67,11 +66,11 @@ version = 'random'  #'random'
 
 #make some code that can visualize a segment (part) of the future transmissions as a timeline. the starting time (in microseconds) of all transmissions are in a list and I want the transmissions to be 4000000 microseconds. another list is also provided, it shows the starting time of all the time slots, which the transmissions are moved into when they are drift corrected. but since the transmissions are likely drifted they will not overlap perfectly. therefore you should use these slot_starting_times to mark the beginning of all time slots. so make all transmissions a red-transparent color so we can see the vertical lines of the slot starting times. since you cannot show all the hundreds of time slots a time_slot parameter with the value will indicate the first time slot you need to visualize. just show 10 time slots / transmissions. 
 
-def main():
+def main(n):
 	channel = Channel()
 	eds = create_end_devices(n, period)
 	slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=rescheduling_bound)
-	print("slot_count:", slot_count, "\tGI:", GI)
+	#print("slot_count:", slot_count, "\tGI:", GI)
 	time_slots_start_times, time_slot_assignments, event_queue, incompatible_with_slot = init_schedule(slot_count, slot_duration, GI, eds)
 	sim_end = 1_000_000*60*60*24
 	simulation_clock = 0
@@ -246,8 +245,8 @@ def main():
 					time_shift = start_time - nextTX_without_drift
 					eds[device_ID].adjust_tx_time(time_shift)
 
-					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
 					#print(device_slot, device_ID, eds[device_ID].global_period_rescheduling, current_period)
+					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
 
 				# If drift correction is necessary. Since period_until_downlink was updated to 1 last iteration then it is actually 0 now
 				elif eds[device_ID].period_until_downlink == 1:
@@ -359,10 +358,12 @@ def main():
 		all_periods_summed += ed.period/period
 	avg_period = all_periods_summed/n
 
-	print("\nOverall utilization:", overall_utilization)
+	#print("\nOverall utilization:", overall_utilization)
 	#print("Fully utilized slots:", fully_utilized_slots)
-	print(channel.accumulated_uplink_time, 1_000_000*60*60*24, channel.accumulated_uplink_time/(1_000_000*60*60*24))
-	print("Number of collisions:", channel.number_of_collisions)
+	#print(channel.accumulated_uplink_time, 1_000_000*60*60*24, channel.accumulated_uplink_time/(1_000_000*60*60*24))
+	print(n, "number of nodes")
+	print("Uplink utilization:", channel.accumulated_uplink_time/(1_000_000*60*60*24))
+	print("Number of collisions:", channel.number_of_collisions,"\n")
 	#print("Average period",avg_period)
 
 
@@ -371,6 +372,9 @@ if __name__=="__main__":
 
 	pr = cProfile.Profile()
 	pr.enable()
-	main()
+	ns = [6000,6500,7000,7500]
+	#ns = [100,200,300,400,500,750,1000,1250,1500,1750,2000,2500,3000,3500,4000,4500,5000]
+	for n in ns:
+		main(n=n)
 	pr.disable()
 	pr.dump_stats("profile_output.prof")

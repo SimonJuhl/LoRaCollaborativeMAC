@@ -9,14 +9,12 @@ class Channel:
 		self.transmission_started = -1
 		self.collision_detected = False
 		self.accumulated_uplink_time = 0
+		self.accumulated_collision_time = 0
 		self.number_of_collisions = 0
 
 
 	# TODO: Add throughput code
 	# TODO: Add code to not include collided transmissions into throughput
-
-	def update_uplink_time(self, tx_duration):
-		self.accumulated_uplink_time += tx_duration
 
 	# Returns collision boolean
 	def change_mode(self, current_time, event):
@@ -40,10 +38,10 @@ class Channel:
 				self.ongoing_transmissions -= 1
 				if self.ongoing_transmissions == 0:
 					if self.collision_detected:
+						self.accumulated_collision_time += (current_time - self.transmission_started)
 						self.collision_detected = False
 					else:
-						tx_duration = current_time - self.transmission_started
-						self.update_uplink_time(tx_duration)
+						self.accumulated_uplink_time += (current_time - self.transmission_started)
 					self.transmission_started = -1
 					return False
 				else:

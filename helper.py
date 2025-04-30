@@ -194,126 +194,106 @@ def assign_to_time_slot_optimized(device_ID, eds, assigned_slots, start_times, r
 	print("NO TIME SLOTS AVAILABLE.")
 	sys.exit(0)
 
+def prep_device_schedules(periods, offsets, min_period, number_of_slots):
+    """Prepare device schedules outside the main loop for efficiency."""
+    schedule_lcm = lcm_multiple(periods)
+    lcm_in_min_periods = round(schedule_lcm / min_period)
+    
+    # Cap the number of periods to check
+    if lcm_in_min_periods > ((1_000_000*60*60*24*7)/min_period):
+        number_of_periods_to_check = int((1_000_000*60*60*24*7)/min_period)
+    else:
+        number_of_periods_to_check = lcm_in_min_periods
+    
+    # Initialize all slots as True (not occupied)
+    device_schedules = [[True] * number_of_periods_to_check for _ in range(number_of_slots)]
+    
+    # Mark occupied slots as False
+    for device_number, (offset, period) in enumerate(zip(offsets, periods)):
+        t = offset
+        period_slots = round(period/min_period)
+        while t < number_of_periods_to_check:
+            device_schedules[device_number][t] = False  # Mark as occupied
+            t += period_slots
+    
+    return device_schedules, number_of_periods_to_check
+
+
 def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, start_times, requested_period, time_compatible, min_period, current_time, incompatible_with_slot, GI):
-	#print("Calculate collisions time", current_time/min_period)
-	periods = []
+    # Initial setup
+    periods = []
+    for device in one_slot_assignments:
+        eds[device['device_id']].global_period_rescheduling = -1
+        periods.append(device["period"])
+    
+    # Get offsets and device ids
+    offsets, dev_ids = get_offsets_of_time_slot(slot_idx, eds, one_slot_assignments, start_times, periods, min_period, current_time, GI)
+    cpy_slot_assignments = one_slot_assignments.copy()
+    
+    # Pre-calculate current_period and period_of_this_slots_next_tx
+    if (current_time % min_period)/min_period > 0.5 and slot_idx == 0:
+        current_period = math.floor(current_time / min_period) + 1
+    elif (current_time % min_period)/min_period < 0.5 and (slot_idx-1) == len(start_times):
+        current_period = math.floor(current_time / min_period) - 1
+    else: 
+        current_period = math.floor(current_time / min_period)
+        
+    if start_times[slot_idx] > (current_time%min_period):
+        period_of_this_slots_next_tx = current_period
+    else:
+        period_of_this_slots_next_tx = current_period+1
+    
 
-	for device in one_slot_assignments:
-		eds[device['device_id']].global_period_rescheduling = -1
-		periods.append(device["period"])
-
-	# Get offsets and device ids of devices already in the slot
-	offsets, dev_ids = get_offsets_of_time_slot(slot_idx, eds, one_slot_assignments, start_times, periods, min_period, current_time, GI)
-
-	cpy_slot_assignments = one_slot_assignments.copy()
-
-	while True:
-		schedule_lcm = lcm_multiple(periods)
-		lcm_in_min_periods = round(schedule_lcm / min_period)
-		number_of_periods_to_check_for_collisions = 0
-
-		if lcm_in_min_periods > ((1_000_000*60*60*24*7)/min_period):
-			number_of_periods_to_check_for_collisions = int((1_000_000*60*60*24*7)/min_period)
-		else:
-			number_of_periods_to_check_for_collisions = lcm_in_min_periods
-
-		'''device_schedules = []
-		#print(cpy_slot_assignments)
-		for d in range(len(cpy_slot_assignments)):
-			#print(periods[d]/min_period)
-			device_schedules.append([])
-			for p in range(number_of_periods_to_check_for_collisions):
-				device_schedules[d].append(True)'''
-
-		device_schedules = [[True] * number_of_periods_to_check_for_collisions for _ in range(len(cpy_slot_assignments))]
-
-
-		#print(offsets, device_schedules)
-		#for d in device_schedules:
-
-		device_number = 0
-		for offset, period in zip(offsets, periods):
-			t = offset
-			while t < number_of_periods_to_check_for_collisions:
-				device_schedules[device_number][t] = False  # Mark as occupied
-				t += round(period/min_period)
-
-			device_number += 1
-
-		successful_reschedule = False
-		for p in range(len(device_schedules[0])):
-			number_of_tx_this_period = 0
-			devices_with_tx_this_period = []
-			for d in range(len(device_schedules)):
-				if not device_schedules[d][p]:
-					#print(slot_idx,d,p)
-					number_of_tx_this_period += 1
-					devices_with_tx_this_period.append(d)
-				if number_of_tx_this_period > 1:
-					collision_by_devices = devices_with_tx_this_period
-					found_device_that_can_be_rescheduled = False
-
-					#for dev in collision_by_devices:
-					#	print(dev, cpy_slot_assignments[dev]['device_id'])
-					#print(slot_idx ,collision_by_devices, offsets, [x // min_period for x in periods], p)
-						#print(cpy_slot_assignments[dev]['device_id'],collision_by_devices, offsets, [x // min_period for x in periods], p)
-					random.shuffle(collision_by_devices)
-
-					for dev in collision_by_devices:
-						# if the device transmits (and can therefore receive downlink) before the collision
-						if offsets[dev] < p:
-							successful_reschedule = True
-
-							if (current_time % min_period)/min_period > 0.5 and slot_idx == 0:
-								current_period = math.floor(current_time / min_period) + 1
-							elif (current_time % min_period)/min_period < 0.5 and (slot_idx-1) == len(start_times):
-								current_period = math.floor(current_time / min_period) - 1
-							else: 
-								current_period = math.floor(current_time / min_period)
-
-							if start_times[slot_idx] > (current_time%min_period):
-								period_of_this_slots_next_tx = current_period
-							else:
-								period_of_this_slots_next_tx = current_period+1
-
-
-
-							P_resch = period_of_this_slots_next_tx + p - int(eds[cpy_slot_assignments[dev]['device_id']].period/min_period)
-							eds[cpy_slot_assignments[dev]['device_id']].global_period_rescheduling = P_resch
-
-							#if P_resch == 0:
-								#print(slot_idx)
-								#print(eds[cpy_slot_assignments[dev]['device_id']].nextTX/min_period, current_time/min_period, offsets[dev], p, int(eds[cpy_slot_assignments[dev]['device_id']].period/min_period))
-							#	print(offsets,[x // min_period for x in periods])
-							#print(cpy_slot_assignments[dev]['device_id'], P_resch)
-
-							cpy_slot_assignments.pop(dev)
-							periods.pop(dev)
-							offsets.pop(dev)
-
-							# We found one device that could be rescheduled. 
-							# We should only reschedule one device and then check for collisions again
-							break
-
-						# If it is not possible to reschedule a device before the collision
-						else:
-							pass
-							#print("Device", cpy_slot_assignments[dev]['device_id'],'in slot', slot_idx, 'cannot be rescheduled before colliding')
-
-					else:
-						# None of the devices can be rescheduled in time
-						pass
-
-					# We found one collision. We should start over with simulating collisions after popping the rescheduled device
-					# We should only reschedule one device and then check for collisions again
-					break
-
-			if successful_reschedule:
-				break
-
-		else:
-			return
-
+    # Main collision detection loop
+    while periods:  # Continue until no periods left or no more collisions found
+        # Generate device schedules for current set of devices
+        device_schedules, num_periods = prep_device_schedules(periods, offsets, min_period, len(periods))
+        device_count = len(device_schedules)
+        
+        # Check for collisions
+        successful_reschedule = False
+        for p in range(num_periods):
+            # Count transmissions in this period
+            tx_devices = []
+            total_tx_this_period = 0
+            for d in range(device_count):
+                if not device_schedules[d][p]:  # Device is transmitting
+                    tx_devices.append(d)
+                    total_tx_this_period += 1
+                # If we found more than one transmission, we have a collision
+                if total_tx_this_period > 1:
+                    # Randomize which device to reschedule
+                    collision_devices = tx_devices.copy()
+                    random.shuffle(collision_devices)
+                    
+                    # Try to find a device that can be rescheduled
+                    for dev in collision_devices:
+                        # If device transmits before the collision, it can be rescheduled
+                        if offsets[dev] < p:
+                            # Calculate rescheduling period
+                            device_id = cpy_slot_assignments[dev]['device_id']
+                            P_resch = period_of_this_slots_next_tx + p - int(eds[device_id].period/min_period)
+                            eds[device_id].global_period_rescheduling = P_resch
+                            
+                            # Remove the device from our tracking lists
+                            cpy_slot_assignments.pop(dev)
+                            periods.pop(dev)
+                            offsets.pop(dev)
+                            
+                            successful_reschedule = True
+                            break
+                    
+                    # We've identified a collision and possibly rescheduled a device
+                    # Break out of the device loop
+                    break
+            
+            # If we successfully rescheduled a device, restart the collision detection
+            if successful_reschedule:
+                break
+        
+        # If we couldn't find any more collisions or reschedule any devices, we're done
+        if not successful_reschedule:
+            return
 
 
 def calc_drift_correction_bound(GI, already_drifted, drift_ppm):
