@@ -115,6 +115,12 @@ def main(n):
 			# Device updates its next transmission time
 			eds[device_ID].update_next_tx_time()
 
+			#if device_ID == 389:
+			#	print("389 in slot ?", current_tx_time/period, eds[device_ID].nextTX/period, eds[device_ID].nextTX_min_period, "start")
+
+			#if device_ID == 465:
+			#	print("465!!!",eds[device_ID].nextTX/period, current_tx_time/period, eds[device_ID].nextTX_min_period, eds[device_ID].period/period)
+
 			eds[device_ID].change_mode(simulation_clock, 'TX_START')
 
 			collision = False
@@ -184,6 +190,10 @@ def main(n):
 
 				eds[device_ID].adjust_tx_time(time_shift, global_period)
 
+				#if device_ID == 389:
+				#	print("START TIME", start_time/period, slot_index, time_slots_start_times[slot_index])
+				#	print("389 in slot", slot_index, current_tx_time/period, eds[device_ID].nextTX/period, eds[device_ID].nextTX_min_period, "join")
+
 				calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
 
 				#if slot_index == 0:
@@ -205,7 +215,7 @@ def main(n):
 				
 				# If the beginning of this transmission collided or if the end of this transmission collided with another tx
 				if event.collision or collision:
-					print("slot",device_slot, "ID", device_ID, "is colliding at time", round(simulation_clock/period,3), round(eds[device_ID].nextTX/period,3))
+					#print("slot",device_slot, "ID", device_ID, "is colliding at time", round(simulation_clock/period,3), round(eds[device_ID].nextTX/period,3))
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(eds[device_ID].uplink_times[-1]+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
@@ -215,6 +225,8 @@ def main(n):
 
 				elif eds[device_ID].global_period_rescheduling == current_period:
 					# Remove from time_slot_assignments
+
+					eds[device_ID].period_until_downlink = -1
 
 					for index, device in enumerate(time_slot_assignments[device_slot]):
 						if device['device_id'] == device_ID:
@@ -248,10 +260,16 @@ def main(n):
 
 					eds[device_ID].adjust_tx_time(time_shift, global_period)
 
+					#if device_ID == 389:
+					#	print("389 in slot", slot_index, current_tx_time/period, eds[device_ID].nextTX/period, eds[device_ID].nextTX_min_period, "resched")
+
 					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
 
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
+					
+					eds[device_ID].uplink_times = []
+
 					#if slot_index == 0:
 					#	print(round(simulation_clock/period,3),"\n", [i['device_id'] for i in time_slot_assignments[slot_index]],"\n", [eds[i['device_id']].nextTX_min_period for i in time_slot_assignments[slot_index]],"\n",[eds[i['device_id']].global_period_rescheduling for i in time_slot_assignments[slot_index]])
 
@@ -266,6 +284,9 @@ def main(n):
 
 					eds[device_ID].adjust_tx_time(time_shift)
 
+					#if device_ID == 389:
+					#	print("389 in slot", device_slot, current_tx_time/period, eds[device_ID].nextTX/period, eds[device_ID].nextTX_min_period, "drift correct")
+
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
@@ -277,6 +298,9 @@ def main(n):
 				else:
 					# If two or more uplinks have been received since drift correction
 					if len(eds[device_ID].uplink_times) >= 2:
+
+						#if device_ID == 389:
+						#	print("389 in slot", device_slot, current_tx_time/period, eds[device_ID].nextTX/period, eds[device_ID].nextTX_min_period, "no downlink")
 
 						# How much time has the device drifted (absolute drift) since it was exactly on the time slot
 						device_drift_since_correction = abs(time_slots_start_times[device_slot] - (current_tx_start_time % period))
@@ -354,7 +378,9 @@ def main(n):
 	#print("Fully utilized slots:", fully_utilized_slots)
 	#print(channel.accumulated_uplink_time, 1_000_000*60*60*24, channel.accumulated_uplink_time/(1_000_000*60*60*24))
 	print(n, "number of nodes")
-	print("Uplink utilization:", channel.accumulated_uplink_time/(1_000_000*60*60*24))
+	number_of_min_periods_during_simulation = sim_end // period
+	max_uplink_time_during_simulation = number_of_min_periods_during_simulation * slot_count * tx_duration
+	print("Uplink utilization:", channel.accumulated_uplink_time/max_uplink_time_during_simulation)
 	print("Number of collisions:", channel.number_of_collisions,"\n")
 	#print("Average period",avg_period)
 
@@ -364,7 +390,7 @@ if __name__=="__main__":
 
 	pr = cProfile.Profile()
 	pr.enable()
-	ns = [1000]
+	ns = [1200]
 	#ns = [100,200,300,400,500,750,1000,1250,1500,1750,2000,2500,3000,3500,4000,4500,5000]
 	for n in ns:
 		main(n=n)
