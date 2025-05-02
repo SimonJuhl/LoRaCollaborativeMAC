@@ -40,6 +40,7 @@ def init_schedule(slot_count, slot_duration, GI, eds):
 	for i in range(slot_count):
 		time_slot_assignments.append([])
 		incompatible_with_slot.append([])
+		heapq.heappush(event_queue, Event(time=time_slots_start_times[i], event_type='UPDATE_OFFSET', device=-1, time_slot=i))
 
 	for device in eds:
 		heapq.heappush(event_queue, Event(time=device.nextTX, event_type='TX_START', device=device.ID))
@@ -71,6 +72,7 @@ def main(n):
 	channel = Channel()
 	eds = create_end_devices(n, period)
 	slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=rescheduling_bound)
+
 	#print("slot_count:", slot_count, "\tGI:", GI)
 	time_slots_start_times, time_slot_assignments, event_queue, incompatible_with_slot = init_schedule(slot_count, slot_duration, GI, eds)
 	sim_end = 1_000_000*60*60*24
@@ -97,7 +99,12 @@ def main(n):
 			#print(simulation_clock/period ,time_slot_assignments[2],"\n")
 			#print(event.event_type, device_slot, device_ID, simulation_clock, time_slot_assignments[device_slot], "\n")
 
-		if event.event_type == 'SHOW_SCHEDULE_ONE_SLOT':
+		if event.event_type == "UPDATE_OFFSET":
+
+			update_offset(eds, event.time_slot, time_slot_assignments, period, simulation_clock)
+			heapq.heappush(event_queue, Event(time=event.time+period, event_type='UPDATE_OFFSET', device=-1, time_slot=event.time_slot))
+
+		elif event.event_type == 'SHOW_SCHEDULE_ONE_SLOT':
 
 			show_one_time_slot_schedule(eds, time_slot_assignments, event.time_slot, period)
 
@@ -169,7 +176,7 @@ def main(n):
 					periods_from_now = 0
 					slot_index = random.randint(0, slot_count-1)
 				
-				time_slot_assignments[slot_index].append({"device_id": device_ID, "period": requested_period})
+				time_slot_assignments[slot_index].append({"device_id": device_ID, "offset": periods_from_now, "period": requested_period})
 
 				# Time when schedule starts over next period
 				schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
@@ -184,6 +191,9 @@ def main(n):
 				start_time = time_slot_start_time + offset
 
 				global_period = int(start_time/period)
+
+				if slot_index == 2 and device_ID == 33:
+					print(simulation_clock/period)
 
 				# Calculate time shift and adjust transmission time of device using nextTX_without_drift (which is exactly one period from the transmission just received)
 				time_shift = start_time - nextTX_without_drift
@@ -239,7 +249,7 @@ def main(n):
 						slot_index = random.randint(0, slot_count-1)
 						periods_from_now = 0
 
-					time_slot_assignments[slot_index].append({"device_id": device_ID, "period": eds[device_ID].period})
+					time_slot_assignments[slot_index].append({"device_id": device_ID, "offset": periods_from_now, "period": eds[device_ID].period})
 
 					# Time when schedule starts over next period
 					schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
@@ -390,8 +400,8 @@ if __name__=="__main__":
 
 	pr = cProfile.Profile()
 	pr.enable()
-	ns = [1200]
-	#ns = [100,200,300,400,500,750,1000,1250,1500,1750,2000,2500,3000,3500,4000,4500,5000]
+	ns = [1500]
+	#ns = [250,500,750,1000,1250,1500,1750,2000]
 	for n in ns:
 		main(n=n)
 	pr.disable()
