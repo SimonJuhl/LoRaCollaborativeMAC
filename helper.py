@@ -23,41 +23,31 @@ def get_offsets_of_time_slot(slot_idx, eds, already_assigned, start_times, all_p
 	if (current_time%min_period) < start_times[slot_idx]:
 		periods_in = math.floor(current_time/min_period)
 	else:
+
 		periods_in = math.floor(current_time/min_period) + 1
-
-	next_slot_start_time = periods_in*min_period + start_times[slot_idx]
-
-	max_offset = int(max(all_periods)/min_period)
 
 	offsets = []
 	dev_ids = []
 
-	# Loop over all devices that are already in slot
-	for device in already_assigned:
-		dev_id = device["device_id"]
+
+	for dev in already_assigned:
+		dev_id = dev['device_id']
 		dev_ids.append(dev_id)
 
-		# Find the device object using its ID. The object's nextTX attribute will be used to calculate offset
-		#for ed in eds:
-		ed = eds[dev_id]
+		# Period of next transmission minus current period
+		offset = eds[dev_id].nextTX_min_period - periods_in
+		
+		# This is an edge case where the transmission has started before the slot and updated its nextTX attribute
+		if offset - int(eds[dev_id].period/min_period) == 0:
+			offset = 0
 
-		#if slot_idx==1:
-			#print(dev_id, ed.nextTX)
-
-		# Find number of periods until devices use the time slot again (offset)
-		# Offset is found using next_slot_start_time. If (nextTX == next_slot_start_time) then offset=0
-		for offset in range(max_offset+1):
-
-			beginning_time_of_slot_given_offset = offset*min_period+next_slot_start_time
-
-			if ed.nextTX >= (beginning_time_of_slot_given_offset - min_period/2) and ed.nextTX <= (beginning_time_of_slot_given_offset + min_period/2):
-				#print(ed.ID, (ed.nextTX-current_time)/min_period, offset, "a")
-				offsets.append(offset)
-				break
-			elif (ed.nextTX - current_time) <= GI/2:
-				#print(ed.ID, (ed.nextTX-current_time)/min_period, offset, "a")
-				offsets.append(int(ed.period/min_period)-1)
-				break
+		# This is an edge case where the slot time has already passed but the transmission has shifted backwards and has therefore not updated its nextTX yet
+		if offset < 0:
+			# Since the slot has already passed we do not want the device to have offset 0, since this is not the slot in next period
+			# Instead we calculate the device's period in min_periods, which will be the time of the next transmission
+			offset = int(eds[dev_id].period/min_period)
+		
+		offsets.append(offset)
 
 	return offsets, dev_ids
 
@@ -157,6 +147,58 @@ def find_collisions_free_slot_for_x_time(slot_idx, eds, already_assigned, start_
 	return -1  # No valid offset found
 
 
+def find_next_time_slot(start_times, current_time, min_period):
+	next_slot = -1
+
+	# The first time t greater than the current time is the next slot. If loop does not break then the next slot is slot 0
+	for i, t in enumerate(start_times):
+		if t > (current_time % min_period):
+			next_slot = i
+			break
+	else:
+		next_slot = 0
+
+	return next_slot
+
+def assign_to_first_available_slot(eds, assigned_slots, start_times, current_time, slot_count, min_period, GI):
+
+	next_slot = find_next_time_slot(start_times, current_time, min_period)
+
+	slot_list_starting_w_next_slot = [(next_slot+i)%slot_count for i in range(slot_count)]
+	
+	check_offset = 0
+	while True:
+		for slot in slot_list_starting_w_next_slot:
+			periods = []
+			for dev in assigned_slots[slot]:
+				periods.append(dev["period"])
+
+			# If time slot is not empty
+			if periods:
+				offsets, dev_ids = get_offsets_of_time_slot(slot, eds, assigned_slots[slot], start_times, periods, min_period, current_time, GI)
+			# If slot is empty, assign device to slot
+			else:
+				#print(check_offset, round(current_time/min_period,2))
+				#print("Assign at time", round(current_time/min_period, 5), "Into slot", slot, round(start_times[slot]/min_period, 5), "and offset", check_offset)
+				#if slot == 7:
+				#	print([], [], current_time/min_period, start_times[7]/min_period)
+				return slot, check_offset
+
+			if check_offset not in offsets:
+				for offset, period in zip(offsets, periods):
+					# If any of the devices has a transmission on the checked offset then break out to check next time slot
+					if (check_offset - offset) % (period // min_period) == 0:
+						break
+
+				#print(check_offset, round(current_time/min_period,2))
+				#print("Assign at time", round(current_time/min_period, 5), "Into slot", slot, round(start_times[slot]/min_period, 5), "and offset", check_offset)
+				#if slot == 7:
+				#	print(offsets, dev_ids, current_time/min_period, start_times[7]/min_period)
+				return slot, check_offset
+
+		check_offset += 1
+
+
 def assign_to_time_slot_optimized(device_ID, eds, assigned_slots, start_times, requested_period, time_compatible, min_period, current_time, incompatible_with_slot, GI):
 	# First check if period is compatible with other periods already assigned
 	for slot_idx in range(len(assigned_slots)):
@@ -215,6 +257,30 @@ def prep_device_schedules(periods, offsets, min_period, number_of_slots):
         while t < number_of_periods_to_check:
             device_schedules[device_number][t] = False  # Mark as occupied
             t += period_slots
+
+    '''for device_number in range(number_of_slots):
+        offset = offsets[device_number]
+        if offset < 0:
+        	print(offset)
+        period = periods[device_number]
+        t = offset
+        period_slots = round(period / min_period)
+
+        if period_slots <= 0:
+            raise ValueError(f"Invalid period/min_period: {period} / {min_period} → {period_slots}")
+
+        while t < number_of_periods_to_check:
+            if device_number >= len(device_schedules):
+                print(f"device_number {device_number} out of bounds! len(device_schedules) = {len(device_schedules)}")
+                raise IndexError("device_number out of bounds")
+
+            if t >= len(device_schedules[device_number]):
+                print(f"t {t} out of bounds! len(device_schedules[{device_number}]) = {len(device_schedules[device_number])}")
+                raise IndexError("t out of bounds")
+
+            #print(device_number, len(device_schedules), t, len(device_schedules[device_number]))
+            device_schedules[device_number][t] = False
+            t += period_slots'''
     
     return device_schedules, number_of_periods_to_check
 
@@ -225,18 +291,22 @@ def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, start_ti
     for device in one_slot_assignments:
         eds[device['device_id']].global_period_rescheduling = -1
         periods.append(device["period"])
-    
+
     # Get offsets and device ids
     offsets, dev_ids = get_offsets_of_time_slot(slot_idx, eds, one_slot_assignments, start_times, periods, min_period, current_time, GI)
     cpy_slot_assignments = one_slot_assignments.copy()
     
+
+    # TODO: This code does not do what it should. 
+    # 		It was supposed to help us find the current period
+
     # Pre-calculate current_period and period_of_this_slots_next_tx
-    if (current_time % min_period)/min_period > 0.5 and slot_idx == 0:
+    '''if (current_time % min_period)/min_period > 0.5 and slot_idx == 0:
         current_period = math.floor(current_time / min_period) + 1
     elif (current_time % min_period)/min_period < 0.5 and (slot_idx-1) == len(start_times):
         current_period = math.floor(current_time / min_period) - 1
-    else: 
-        current_period = math.floor(current_time / min_period)
+    else: '''
+    current_period = math.floor(current_time / min_period)
         
     if start_times[slot_idx] > (current_time%min_period):
         period_of_this_slots_next_tx = current_period
@@ -277,6 +347,7 @@ def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, start_ti
                             
                             # Remove the device from our tracking lists
                             cpy_slot_assignments.pop(dev)
+                            dev_ids.pop(dev)
                             periods.pop(dev)
                             offsets.pop(dev)
                             

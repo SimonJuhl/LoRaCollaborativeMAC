@@ -63,10 +63,12 @@ class Event:
 
 
 class ED:
-	def __init__(self, ID, period, join_time, drift_direction=1, drift=10):
+	def __init__(self, ID, period, join_time, min_period, drift_direction=1, drift=10):
 		self.ID = ID
 		self.period = period
+		self.min_period = min_period
 		self.nextTX = join_time
+		self.nextTX_min_period = -1					# This is set when device joins since min_periods tells us which min_period of a specific slot we are talking about
 		self.drift_direction = drift_direction
 		self.drift = drift
 		self.period_until_downlink = -1
@@ -80,17 +82,24 @@ class ED:
 		self.voltage = 3.3
 
 	def update_next_tx_time(self):
-		#self.nextTX = self.nextTX + self.period + (self.drift_direction*self.drift*int(self.period/(1000000)))
 		drift_per_microsecond = self.drift / 1_000_000
 		drift_adjustment = int(self.period * drift_per_microsecond * self.drift_direction)
 		nextTX_without_drift = self.nextTX + self.period
 		self.nextTX += self.period + drift_adjustment
+		# When joining we want to know which period it is scheduled into
+		if self.joined:
+			self.nextTX_min_period += int(self.period/self.min_period)
 		#return self.nextTX, nextTX_without_drift
 
 
+
 	# Both used to correct drift and reschedule
-	def adjust_tx_time(self, time_shift):
+	def adjust_tx_time(self, time_shift, global_period=None):
 		self.nextTX = self.nextTX + time_shift
+
+		# global_period is passed through on join and rescheduling, but during drift correction it keeps the same nextTX_min_period
+		if not global_period == None:
+			self.nextTX_min_period = global_period
 
 
 	def change_mode(self, clock, event):
