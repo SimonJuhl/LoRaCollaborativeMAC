@@ -80,6 +80,8 @@ class ED:
 		self.current_mode = 'STANDBY'
 		self.last_mode_change = 0
 		self.voltage = 3.3
+		self.rescheduling_shifts = []
+		self.rescheduling_shifts_in_dev_periods = []
 
 	def update_next_tx_time(self):
 		drift_per_microsecond = self.drift / 1_000_000
@@ -91,8 +93,6 @@ class ED:
 			self.nextTX_min_period += int(self.period/self.min_period)
 		#return self.nextTX, nextTX_without_drift
 
-
-
 	# Both used to correct drift and reschedule
 	def adjust_tx_time(self, time_shift, global_period=None):
 		self.nextTX = self.nextTX + time_shift
@@ -100,7 +100,6 @@ class ED:
 		# global_period is passed through on join and rescheduling, but during drift correction it keeps the same nextTX_min_period
 		if not global_period == None:
 			self.nextTX_min_period = global_period
-
 
 	def change_mode(self, clock, event):
 		if self.current_mode == 'STANDBY':
@@ -113,7 +112,7 @@ class ED:
 			else:
 				print("ERROR: IN STANDBY MODE")
 				sys.exit(0)
-			self.update_energy_consumption(clock, 0.0016)	# Standby mode:  	1.6  mA
+			self.update_energy_consumption(clock, 0.0000002)	# Sleep mode:  	0.2 uA
 		elif self.current_mode == 'TX':
 			if event == 'TX_END':
 				self.current_mode = 'STANDBY'
@@ -129,12 +128,15 @@ class ED:
 			elif event == 'SIM_END':
 				pass
 			else:
-				print("ERROR: IN RX MODE")
+				print("ERROR: IN RX MODE", event, clock/(1_000_000*60*60), clock)
 				sys.exit(0)
 			self.update_energy_consumption(clock, 0.0115)	# Receive mode:  	11.5 mA
-
 
 	def update_energy_consumption(self, clock, current_ampere):
 		time_in_mode = (clock - self.last_mode_change)/1_000_000				# in seconds
 		self.energy_consumption += current_ampere*self.voltage*time_in_mode
 		self.last_mode_change = clock
+
+	def update_rescheduling_shifts(self, shift):
+		self.rescheduling_shifts.append(shift)
+		self.rescheduling_shifts_in_dev_periods.append(shift/self.period)
