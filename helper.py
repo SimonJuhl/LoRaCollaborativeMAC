@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import colorsys
 from collections import defaultdict
+import seaborn as sns
 
 def lcm(a, b):
 	return abs(a * b) // math.gcd(a, b)
@@ -25,14 +26,16 @@ def lcm_multiple(lst):
 		[id     , ...],					<--- ext[0][0]
 		[offset , ...],					<--- ext[0][1]
 		[period , ...]					<--- ext[0][2]
+		[compat , ...]					<--- ext[0][3]
 	],
 	[									<--- ext[1]
 		[id_1     , id_2     , ...],  	<--- ext[1][0]
 		[offset_1 , offset_2 , ...],  	<--- ext[1][1]
 		[period_1 , period_2 , ...]  	<--- ext[1][2]
+		[compat_1 , compat_2 , ...]		<--- ext[0][3]
 	],		
 			↑
-	   ext[1][2][0]
+	   ext[1][3][0]
 	
 	.
 	.
@@ -376,6 +379,7 @@ def is_period_compatible(candidate_period, existing_periods):
     return True
 
 # This will update the time_slot_assignments_ext sublist with compatible periods for the slot
+# This compatibility will not guarantee compatibility. It will just tell us whether it is compatible with the all device periods individually
 def find_compatible_periods_for_slot(slot_idx, assigned_slots_ext, start_times, current_time, min_period, dev_period_lower_bound, dev_period_upper_bound):
     compatible_periods = []
     existing_periods = []
@@ -387,26 +391,83 @@ def find_compatible_periods_for_slot(slot_idx, assigned_slots_ext, start_times, 
         if is_period_compatible(candidate_period, existing_periods):
             compatible_periods.append(candidate_period)
 
-    print("slot",slot_idx, "compatible periods", compatible_periods, "time", current_time/min_period)
+    #print("slot",slot_idx, "compatible periods", compatible_periods, "time", current_time/min_period)
     assigned_slots_ext[slot_idx][3] = compatible_periods
 
 
+def find_collision_time_of_new_device_in_slot(periods, offsets, min_period, check_offset, new_period, sim_end):
+    updated_periods = periods + [new_period]
+    updated_offsets = offsets + [check_offset]
+    device_schedules, num_periods = prep_device_schedules(updated_periods, updated_offsets, min_period, len(periods), sim_end)
+    device_count = len(device_schedules)
+    device_sets = [set(lst) for lst in device_schedules]
 
+    earliest_collision = float('inf')
+    colliding_pair = None
 
-def optimized_assignment_v1(eds, slot_idx, new_period, assigned_slots_ext, start_times, current_time, slot_count, min_period, start_offset=0):
+	# Find earliest intersection/collision in device_sets
+    for i in range(device_count-1):
+        # Get all intersections between the two sets
+        intersection = device_sets[i] & device_sets[-1]
+        if intersection:
+            earliest = min(intersection)
+            # If the collision happens before check_offset which is the assignment time, then we do not care about the collision
+            if earliest < earliest_collision and earliest > check_offset:
+                earliest_collision = earliest
+
+    #print("Alternative time slot for period ", int(new_period/min_period) ," will be available from", check_offset, "to", earliest_collision)
+    return earliest_collision
+
+def find_best_time_slot_in_window(assigned_slots_ext, start_times, current_time, min_period, slot_count, consider_x_slots, sim_end, new_period, start_offset=0):
+	next_slot = (find_next_time_slot(start_times, current_time, min_period) + 1) % slot_count
+	slot_list_starting_w_next_slot = [(next_slot+i)%slot_count for i in range(slot_count)]
+	candidate_slots = []
+	
+	check_offset = start_offset
+	
+	while True:
+
+		for slot in slot_list_starting_w_next_slot:			
+			dev_ids = assigned_slots_ext[slot][0].copy()
+			offsets = assigned_slots_ext[slot][1].copy()
+			periods = assigned_slots_ext[slot][2].copy()
+
+			if check_offset not in offsets:
+				for offset, period in zip(offsets, periods):
+					# If any of the devices has a transmission on the checked offset then break out to check next time slot
+					if (check_offset - offset) % (period // min_period) == 0:
+						break
+
+				#print("Calculating collision for offset", check_offset, "meaning that this is not in", offsets)
+				collision_time = find_collision_time_of_new_device_in_slot(periods, offsets, min_period, check_offset, new_period, sim_end)
+				candidate_slots.append([slot, check_offset, collision_time])
+				
+				if len(candidate_slots) == consider_x_slots:
+					longest_non_colliding_slot = -1
+					for idx, c_s in enumerate(candidate_slots):
+						non_colliding_time = c_s[2] - c_s[1]
+						if non_colliding_time > longest_non_colliding_slot:
+							longest_non_colliding_slot = idx
+
+					return candidate_slots[idx]
+
+		check_offset += 1
+
+def optimized_assignment_v1(eds, new_period, assigned_slots_ext, start_times, current_time, slot_count, min_period, consider_x_slots, sim_end, start_offset=0):
+
+	new_period_in_min = int(new_period/min_period)
 
 	compatible_slots = []
 
 	# Check if the period is compatible with any of the slot
 	for idx, slot in enumerate(assigned_slots_ext):
-		if new_period in slot[3]:
+		if not slot:
+			continue
+		if new_period_in_min in slot[3]:
 			compatible_slots.append(idx)
 
 
 	if compatible_slots:
-		earliest_slot = float('inf')
-		earliest_offset = float('inf')
-		new_period_in_min = int(new_period/min_period)
 		for slot in compatible_slots:
 
 			dev_ids = assigned_slots_ext[slot][0].copy()
@@ -423,23 +484,31 @@ def optimized_assignment_v1(eds, slot_idx, new_period, assigned_slots_ext, start
 				
 				# If loop does not break then no collision is detected
 				else:
-					if check_offset <= earliest_offset and slot < earliest_slot:
-						earliest_offset = check_offset
-						earliest_slot = slot
+					#print("Earliest compatibility found slot", slot, " offset", check_offset)
+					return slot, check_offset
+
+				# It is not guaranteed that a slot in compatible_slots is compatible. Thus try another slot after x offsets
+				if (check_offset - start_offset) > 500:
 					break
 
 				check_offset += 1
 
-		print("Earliest compatibility found slot", earliest_slot, " offset", earliest_offset)
-		return earliest_slot, earliest_offset
-
-
 	# If none of the slots are compatible, check if there is an empty slot
-	else:
-		# If not compatible then assign device to empty slot
-		for slot_idx in range(len(assigned_slots_ext)):
-			if not assigned_slots_ext[slot_idx]:
-				return slot_idx, 0
+	
+	# If not compatible then assign device to empty slot
+	for slot_idx in range(len(assigned_slots_ext)):
+		if not assigned_slots_ext[slot_idx]:
+			return slot_idx, 0
+
+
+	# This function returns the longest available time slot in a list like this [slot_idx, offset, collision_time]
+	# The procedure of the function is:
+	#	For each offset and slot, find an available slot, check how long this period can stay before collision
+	#	X number of available slots are found and the one that works for the longest is picked and returned 
+	best_slot = find_best_time_slot_in_window(assigned_slots_ext, start_times, current_time, min_period, slot_count, consider_x_slots, sim_end, new_period, start_offset)
+
+	return best_slot[0], best_slot[1]
+
 
 
 
@@ -668,31 +737,35 @@ def visualize_schedule_grid(availability_schedule):
     plt.tight_layout()
     plt.show()
 
-def plot_rescheduling_shift_distributions(eds):
+def plot_rescheduling_shift_distributions(eds, min_period):
     # Flatten the lists of shifts across all devices
     shifts_in_dev_periods = [shift for ed in eds for shift in ed.rescheduling_shifts_in_dev_periods]
-    shifts_in_microseconds = [shift for ed in eds for shift in ed.rescheduling_shifts]
+    shifts_in_microseconds = [shift/min_period for ed in eds for shift in ed.rescheduling_shifts]
 
     # Create figure with two subplots
     fig, ax1 = plt.subplots(1, 1, figsize=(10, 8), sharex=False)
 
     # Top: Shifts in device periods
-    ax1.hist(shifts_in_dev_periods, bins='sturges', color='skyblue', edgecolor='black')
+    ax1.hist(shifts_in_microseconds, bins='sturges', color='skyblue', edgecolor='black')
     ax1.set_title('Rescheduling Shifts (in Device Periods)')
     ax1.set_xlabel('Shift (Device Periods)')
     ax1.set_ylabel('Frequency')
     ax1.grid(True)
 
-    '''# Bottom: Shifts in microseconds
-    ax2.hist(shifts_in_microseconds, bins='sturges', color='salmon', edgecolor='black')
-    ax2.set_title('Rescheduling Shifts (in Microseconds)')
-    ax2.set_xlabel('Shift (µs)')
-    ax2.set_ylabel('Frequency')
-    ax2.grid(True)'''
-
     plt.tight_layout()
     plt.show()
 
+def plot_rescheduling_shift_swarm_distributions(eds, min_period):
+    shifts_in_microseconds = [shift/min_period for ed in eds for shift in ed.rescheduling_shifts]
+
+    plt.figure(figsize=(12, 6))
+    sns.stripplot(data=shifts_in_microseconds, orient="h", jitter=0.25, alpha=0.5, size=3)
+    plt.title('Rescheduling Shifts (in Min Periods)')
+    plt.xlabel('Shift (Min Periods)')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("rescheduling_shifts.png", dpi=300, bbox_inches='tight')
+    #plt.show()
 
 def plot_energy_consumption_distribution(eds):
     # Extract all energy consumption values (in joules)
@@ -714,4 +787,5 @@ def plot_energy_consumption_distribution(eds):
     plt.ylabel('Number of Devices')
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    plt.savefig("energy_consumption.png", dpi=300, bbox_inches='tight')
+    #plt.show()

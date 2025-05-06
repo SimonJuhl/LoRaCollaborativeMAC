@@ -63,7 +63,7 @@ slot_duration = tx_duration + rx_delay + rx_duration
 rescheduling_bound = 1_000_000*60*60*12
 sim_end = 1_000_000*60*60*24*2
 #version = 'random'
-version = 'next_slot'
+version = 'optimized_v1'
 
 ''' TODO
 
@@ -165,10 +165,11 @@ def main(n):
 				requested_period = eds[device_ID].period
 
 				# Find available time slot and assign device the available slot
-				if version == 'optimized':
-					slot_index, periods_from_now, incompatible_with_slot = assign_to_time_slot_optimized(device_ID, eds, time_slot_assignments, time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI)
-				elif version == 'next_slot':
+				if version == 'next_slot':
 					slot_index, periods_from_now = assign_to_first_available_slot(eds, time_slot_assignments, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, 5)
+				elif version == 'optimized_v1':
+					#print(device_ID, )
+					slot_index, periods_from_now = optimized_assignment_v1(eds, eds[device_ID].period, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, 10, sim_end, 5)
 				elif version == 'random':
 					periods_from_now = 0
 					slot_index = random.randint(0, slot_count-1)
@@ -252,7 +253,9 @@ def main(n):
 							time_slot_assignments_ext[device_slot][2].pop(index)
 
 					if version == 'next_slot':
-						slot_index, periods_from_now = assign_to_first_available_slot(eds, time_slot_assignments, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, int(eds[device_ID].period/period)-1)
+						slot_index, periods_from_now = assign_to_first_available_slot(eds, time_slot_assignments, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, int(eds[device_ID].period/period))
+					elif version == 'optimized_v1':
+						slot_index, periods_from_now = optimized_assignment_v1(eds, eds[device_ID].period, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, 10, sim_end, int(eds[device_ID].period/period))
 					elif version == 'random':
 						slot_index = random.randint(0, slot_count-1)
 						periods_from_now = 0
@@ -405,15 +408,24 @@ def main(n):
 	print("Number of collisions:", channel.number_of_collisions,"\n")
 
 
-	#for ed in eds:
+	number_of_rescheduling_shifts = 0
+	accumulated_rescheduling_shift_in_min_periods = 0
+	for ed in eds:
+		for shift in ed.rescheduling_shifts:
+			number_of_rescheduling_shifts += 1
+			accumulated_rescheduling_shift_in_min_periods += shift/period
 	#	print(ed.rescheduling_shifts_in_dev_periods)
 	#	print(ed.rescheduling_shifts)
+
+	print("Rescheduling shifts", number_of_rescheduling_shifts, "average shift is", accumulated_rescheduling_shift_in_min_periods/number_of_rescheduling_shifts)
 
 	#for ed in eds:
 		#print(ed.energy_consumption)
 
 	plot_energy_consumption_distribution(eds)
-	#plot_rescheduling_shift_distributions(eds)
+	print("Energy plot created")
+	plot_rescheduling_shift_swarm_distributions(eds, period)
+	print("Rescheduling shift plot created")
 
 	#print("Average period", avg_period)
 
@@ -423,7 +435,7 @@ if __name__=="__main__":
 
 	pr = cProfile.Profile()
 	pr.enable()
-	ns = [1000]
+	ns = [3000]
 	#ns = [250,500,750,1000,1250,1500,1750,2000]
 	for n in ns:
 		main(n=n)
