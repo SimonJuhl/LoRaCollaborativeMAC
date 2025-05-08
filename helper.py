@@ -19,7 +19,6 @@ def lcm_multiple(lst):
 		result = lcm(result, val)
 	return result
 
-
 ''' HOW time_slot_assignments_ext WORKS
 [
 	[									<--- ext[0]
@@ -380,7 +379,7 @@ def is_period_compatible(candidate_period, existing_periods):
 
 # This will update the time_slot_assignments_ext sublist with compatible periods for the slot
 # This compatibility will not guarantee compatibility. It will just tell us whether it is compatible with the all device periods individually
-def find_compatible_periods_for_slot(slot_idx, assigned_slots_ext, start_times, current_time, min_period, dev_period_lower_bound, dev_period_upper_bound):
+def find_compatible_periods_for_slot(slot_idx, assigned_slots_ext, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound):
     compatible_periods = []
     existing_periods = []
 
@@ -392,7 +391,8 @@ def find_compatible_periods_for_slot(slot_idx, assigned_slots_ext, start_times, 
             compatible_periods.append(candidate_period)
 
     #print("slot",slot_idx, "compatible periods", compatible_periods, "time", current_time/min_period)
-    assigned_slots_ext[slot_idx][3] = compatible_periods
+    #assigned_slots_ext[slot_idx][3] = 
+    return compatible_periods
 
 
 def find_collision_time_of_new_device_in_slot(periods, offsets, min_period, check_offset, new_period, sim_end):
@@ -418,6 +418,10 @@ def find_collision_time_of_new_device_in_slot(periods, offsets, min_period, chec
     #print("Alternative time slot for period ", int(new_period/min_period) ," will be available from", check_offset, "to", earliest_collision)
     return earliest_collision
 
+# This function returns the longest available time slot in a list like this [slot_idx, offset, collision_time]
+# The procedure of the function is:
+#	For each offset and slot, find an available slot, check how long this period can stay before collision
+#	X number of available slots are found and the one that works for the longest is returned 
 def find_best_time_slot_in_window(assigned_slots_ext, start_times, current_time, min_period, slot_count, consider_x_slots, sim_end, new_period, start_offset=0):
 	next_slot = (find_next_time_slot(start_times, current_time, min_period) + 1) % slot_count
 	slot_list_starting_w_next_slot = [(next_slot+i)%slot_count for i in range(slot_count)]
@@ -500,17 +504,202 @@ def optimized_assignment_v1(eds, new_period, assigned_slots_ext, start_times, cu
 		if not assigned_slots_ext[slot_idx]:
 			return slot_idx, 0
 
-
-	# This function returns the longest available time slot in a list like this [slot_idx, offset, collision_time]
-	# The procedure of the function is:
-	#	For each offset and slot, find an available slot, check how long this period can stay before collision
-	#	X number of available slots are found and the one that works for the longest is picked and returned 
 	best_slot = find_best_time_slot_in_window(assigned_slots_ext, start_times, current_time, min_period, slot_count, consider_x_slots, sim_end, new_period, start_offset)
 
 	return best_slot[0], best_slot[1]
 
 
+# Finds device id, offset and period for all devices in window
+# Makes temporary ext list without these devices 
 
+
+# Either we specify some number of periods or slots for the window. If specifying slots then the window is less than one period
+def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, window_slots, current_time, min_period, slot_count, consider_x_slots, dev_period_lower_bound, dev_period_upper_bound, sim_end):
+
+	# SUDDENLY IT IS NOT ENOUGH TO HAVE THE CURRENT RESCHEDULING SYSTEM. SINCE THIS NEW PROCEDURE CALCULATES THE NEW SLOTS AND OFFSETS OF ALL DEVICES IN THIS FUNCTION WE NEED TO RETURN A LIST WITH INFORMATION ABOUT WHERE THE PLANNED RESCHEDULING WILL MAKE CHANGES AND HOW THOSE CHANGES LOOK [[id...],[slot...],[offset...]].
+	# THIS MEANS THAT WE NEED TO CHECK IF EVENT.DEVICE_ID IS IN THE RESCHEDULING PLANS. THEN POP THE DEVICE FROM THE PLANS.
+
+
+	# SHOULD WE ONLY UPDATE THE SCHEDULE IF IT IS BETTER? IF WE DONT CARE THEN WE WILL ALWAYS GET A SCHEDULE THAT IS AS OR MORE COMPATIBLE THAN THE CURRENT.
+	# BUT THE OPTIMIZED IS GOING TO COMPROMISE ON THE AMOUNT OF SHIFT. BECAUSE WE WILL RESCHEDULE DEVICES ONLY BASED ON COMPATIBILITY AND NOT CONSIDER SHIFT.
+	
+
+	# FIND DEVICES IN WINDOW
+	next_slot = (find_next_time_slot(start_times, current_time, min_period) + 1) % slot_count
+	slot_list_starting_w_next_slot = [(next_slot+i)%slot_count for i in range(slot_count)]
+
+	# If we have a window of less than a period, we still need to run the outer loop once
+	if window_periods == 0:
+		window_periods += 1
+
+	# If we 
+	if not window_slots == 0:
+		slot_list_starting_w_next_slot = slot_list_starting_w_next_slot[:window_slots]
+
+	# List will later only contain devices outside of window
+	temp_ext = assigned_slots_ext.copy()
+
+	# List over all devices in window [[id...],[offset...],[period...]]
+	devices_in_window = [[],[],[]]
+	for p in range(window_periods):
+		for s in slot_list_starting_w_next_slot:
+			for i, offset in enumerate(assigned_slots_ext[s][1]):
+				# If one of the devices assigned to slot s has offset equal to the period p we are currently checking
+				if offset == p:
+					# Append device_id, offset and period to list
+					devices_in_window[0].append(assigned_slots_ext[s][0][i])
+					devices_in_window[1].append(assigned_slots_ext[s][1][i])
+					devices_in_window[2].append(assigned_slots_ext[s][2][i])
+
+					# Pop the devices which we are trying to reschedule from the schedule to free up their spaces
+					temp_ext[s][0].pop(i)
+					temp_ext[s][1].pop(i)
+					temp_ext[s][2].pop(i)
+
+	print(devices_in_window, current_time/min_period)
+
+	# Recalculate compatibilities for temp_ext[]
+	for slot_idx in range(len(temp_ext)):
+		temp_ext[slot_idx][3] = find_compatible_periods_for_slot(slot_idx, temp_ext, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound)
+	
+
+	# ids, slot to change to, "periods from now" relative to the time of the rescheduling
+	plan = [[],[],[]]
+
+	# Saved indexes of devices_in_window which have been added to a compatible slot, and thus need to be popped from devices_in_window
+	devices_to_pop = []
+
+	# For each device in the window
+	for idx in range(len(devices_in_window[0])):
+
+		dev_id = devices_in_window[0][idx]
+		dev_offset = devices_in_window[1][idx]			# This is the number of periods from now before the next tx
+		dev_period = devices_in_window[2][idx]
+
+		dev_period_in_min = int(dev_period/min_period)
+
+		compatible_slots = []
+
+		# Check if the device period is compatible with any of the slots
+		for comp_idx, slot in enumerate(temp_ext):
+			if not slot:
+				continue
+			if dev_period_in_min in slot[3]:
+				compatible_slots.append(comp_idx)
+
+
+		found_slot = False
+
+		# If there is at least one of the slots that are compatible
+		if compatible_slots:
+			# For each slot, check if 
+			for slot in compatible_slots:
+
+				dev_ids = temp_ext[slot][0]
+				offsets = temp_ext[slot][1]
+				periods = temp_ext[slot][2]
+				periods_in_min = [p // min_period for p in periods]
+
+				# Check only offsets that are at least one device period after the device's next transmission
+				from_offset = dev_offset + dev_period_in_min
+				check_offset = from_offset
+				while True:
+					for P_i, O_i in zip(periods_in_min, offsets):
+						# If there is a collision between new device and one of existing devices
+						if (check_offset - O_i) % math.gcd(dev_period_in_min, P_i) == 0:
+							break
+					
+					# If loop does not break then no collision is detected
+					else:
+						#print("Earliest compatibility found slot", slot, " offset", check_offset)
+						found_slot = True
+
+						# Add to plan which we use in simulator event loop
+						plan[0].append(dev_id) 
+						plan[1].append(slot) 
+						plan[2].append(check_offset-dev_offset) 	# Since check offset is relative to now we need to subtract the time until the device transmits next time
+						
+						# We have to update temp_ext such that we do not have a collision with the new device
+						temp_ext[slot][0].append(dev_id)
+						temp_ext[slot][1].append(check_offset)		# New offset found
+						temp_ext[slot][2].append(dev_period)
+
+						# Recalculate compatibility
+						temp_ext[slot][3] = find_compatible_periods_for_slot(slot_idx, temp_ext, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound)
+
+						devices_to_pop.append(dev_id)
+
+						break
+
+					# It is not guaranteed that a slot in compatible_slots is compatible. Thus try another slot after x offsets
+					if (check_offset - from_offset) > 500:
+						break
+
+					check_offset += 1
+
+				if found_slot:
+					break
+
+	# Remove all devices that already have been assigned to a slot from devices_in_window
+	for dev_id_to_pop in devices_to_pop:
+		for idx, dev_id in enumerate(devices_in_window[0]):
+			if dev_id_to_pop == dev_id:
+				devices_in_window[0].pop(idx)
+				devices_in_window[1].pop(idx)
+				devices_in_window[2].pop(idx)
+				break
+
+	#print("Compatible devices:", devices_to_pop)
+	#print("Find best slot of:", devices_in_window[0])
+
+	for idx in range(len(devices_in_window[0])):
+
+		dev_id = devices_in_window[0][idx]
+		dev_offset = devices_in_window[1][idx]			# This is the number of periods from now before the next tx
+		dev_period = devices_in_window[2][idx]
+
+		dev_period_in_min = int(dev_period/min_period)
+
+		# best slot = [slot_idx, offset, collision_time]
+		from_offset = dev_offset + dev_period_in_min
+		check_offset = from_offset
+		best_slot = find_best_time_slot_in_window(temp_ext, start_times, current_time, min_period, slot_count, consider_x_slots, sim_end, dev_period, check_offset)
+
+		# Add to plan which we use in simulator event loop
+		plan[0].append(dev_id) 
+		plan[1].append(best_slot[0]) 				# Slot index
+		plan[2].append(best_slot[1]-dev_offset) 	# Since check offset is relative to now we need to subtract the time until the device transmits next time
+		
+		# We have to update temp_ext such that we do not have a collision with the new device
+		temp_ext[slot][0].append(dev_id)
+		temp_ext[slot][1].append(best_slot[1])		# New offset found
+		temp_ext[slot][2].append(dev_period)
+
+
+	print("PLAN:\nIDs:",plan[0], "\nSlots", plan[1], "\nOffsets", plan[2])
+	return plan
+
+
+	# ANOTHER VERSION OF THIS COULD BE TO ONLY REMOVE THE DEVICES WITH global_period_rescheduling-ATTRIBUTE WHICH IS NOT -1
+	# THIS WOULD ALLOW US TO NOT RESCHEDULE COMPATIBLE DEVICES
+
+	# FIRST GO THROUGH RESCH_DEVS AND CHECK IF THERE EXISTS A COMPATIBLE SLOT WITH START_TIME=DEV.PERIOD+DEV.OFFSET. IF THERE DOES UPDATE PLAN LIST WHICH IS RETURNED FROM FUNCTION AND POP DEVICE FROM RESCH_DEVS
+	# FOR THE REMAINING DEVICES IN RESCH_DEVS RUN find_best_time_slot_in_window ON THEM.
+
+
+
+	# WE SHOULD RECALCULATE RESCHEDULING OF ALL SLOTS IN THE PLAN
+
+	# TRY TO COMPARE THE V1 AND V2 OVER LONGER PERIODS OF TIME AND TRACK THE NUMBER OF RESCHEDULING HOUR FOR TO SEE IF IT BECOMES LESS 
+
+	# VARIATIONS:
+		# NOT RESCHEDULE EVERYTHING WITHIN WINDOW. FILTER OUT COMPATIBLE DEVICE
+		# CHANGING WINDOW SIZE
+
+
+	''' IDEA: FIND DIFFERENCE BETWEEN global_period_rescheduling-TIME AND CURRENT TIME. HAVE SOME THRESHOLD WHICH
+	DEFINES WHEN THE DIFFERENCE IS LOW ENOUGH TO BE CONSIDERED FOR RESCHEDULING EARLY ON. 
+	'''
 
 
 ############# VISUALIZATION CODE #############
@@ -755,6 +944,7 @@ def plot_rescheduling_shift_distributions(eds, min_period):
     plt.tight_layout()
     plt.show()
 
+
 def plot_rescheduling_shift_swarm_distributions(eds, min_period):
     shifts_in_microseconds = [shift/min_period for ed in eds for shift in ed.rescheduling_shifts]
 
@@ -766,6 +956,26 @@ def plot_rescheduling_shift_swarm_distributions(eds, min_period):
     plt.tight_layout()
     plt.savefig("rescheduling_shifts.png", dpi=300, bbox_inches='tight')
     #plt.show()
+
+
+def plot_number_of_reschedulings(eds):
+    # Count reschedulings for each device
+    rescheduling_counts = [len(ed.rescheduling_shifts) for ed in eds]
+
+    plt.figure(figsize=(12, 6))
+
+    # Histogram of number of reschedulings
+    bins = np.arange(0, max(rescheduling_counts)+2) - 0.5  # To center bars
+    plt.hist(rescheduling_counts, bins=bins, color='steelblue', edgecolor='black', log=True)
+
+    plt.title("Number of Reschedulings per Device")
+    plt.xlabel("Number of Reschedulings")
+    plt.ylabel("Number of Devices (log scale)")
+    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+    plt.xticks(np.arange(0, max(rescheduling_counts)+1))
+    plt.tight_layout()
+    plt.savefig("number_of_rescheduling.png", dpi=300, bbox_inches='tight')
 
 def plot_energy_consumption_distribution(eds):
     # Extract all energy consumption values (in joules)
