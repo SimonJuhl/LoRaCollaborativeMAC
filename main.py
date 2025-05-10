@@ -63,7 +63,7 @@ slot_duration = tx_duration + rx_delay + rx_duration
 rescheduling_bound = 1_000_000*60*60*12
 sim_end = 1_000_000*60*60*24*2
 #version = 'random'
-version = 'optimized_v2'
+
 slots_to_consider_in_search_of_optimal = 10
 window_periods = 1
 window_slots = 0
@@ -77,7 +77,7 @@ window_slots = 0
 
 #make some code that can visualize a segment (part) of the future transmissions as a timeline. the starting time (in microseconds) of all transmissions are in a list and I want the transmissions to be 4000000 microseconds. another list is also provided, it shows the starting time of all the time slots, which the transmissions are moved into when they are drift corrected. but since the transmissions are likely drifted they will not overlap perfectly. therefore you should use these slot_starting_times to mark the beginning of all time slots. so make all transmissions a red-transparent color so we can see the vertical lines of the slot starting times. since you cannot show all the hundreds of time slots a time_slot parameter with the value will indicate the first time slot you need to visualize. just show 10 time slots / transmissions. 
 
-def main(n):
+def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 	channel = Channel()
 	eds = create_end_devices(n, period)
 	slot_count, GI = get_slot_count_and_GI(period, slot_duration, drift_ppm=10, rescheduling_bound=rescheduling_bound)
@@ -183,9 +183,9 @@ def main(n):
 					#print(device_ID, )
 					slot_index, periods_from_now = optimized_assignment_v1(eds, eds[device_ID].period, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, slots_to_consider_in_search_of_optimal, sim_end, 5)
 				elif version == 'random':
-					periods_from_now = 0
+					periods_from_now = random.randint(0, 10)
 					slot_index = random.randint(0, slot_count-1)
-				
+
 				time_slot_assignments[slot_index].append({"device_id": device_ID, "offset": periods_from_now, "period": requested_period})
 
 				#print(time_slot_assignments_ext)
@@ -238,9 +238,14 @@ def main(n):
 				# Get time slot index value which device is assigned to
 				device_slot, current_period = get_device_time_slot(device_ID, time_slot_assignments, simulation_clock, period)
 				
+				#if device_slot == 53:
+					#print("SKRRRRRRRRT",len(time_slot_assignments[device_slot]),len(time_slot_assignments_ext[device_slot][0]))
+					#if not len(time_slot_assignments[device_slot])== len(time_slot_assignments_ext[device_slot][0]):
+						#print([br['device_id'] for br in time_slot_assignments[device_slot]], "\n", time_slot_assignments_ext[slot_index][0])
+
 				# If the beginning of this transmission collided or if the end of this transmission collided with another tx
 				if event.collision or collision:
-					print("slot",device_slot, "ID", device_ID, "is colliding at time", round(simulation_clock/period,3), eds[device_ID].period_until_downlink, int(eds[device_ID].period/period))
+					#print("slot",device_slot, "ID", device_ID, "is colliding at time", round(simulation_clock/period,3), eds[device_ID].period_until_downlink, int(eds[device_ID].period/period))
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(eds[device_ID].uplink_times[-1]+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
@@ -248,13 +253,23 @@ def main(n):
 					if eds[device_ID].global_period_rescheduling == current_period:
 						calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slot_assignments_ext[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI, sim_end)
 
-
-
 				# If the device is in the rescheduling plan
 				elif rescheduling_plan and (device_ID in rescheduling_plan[0]):
+					#if device_slot == 53:
+						#print("===> 1")
 					idx_of_dev_in_plan = rescheduling_plan[0].index(device_ID)
+					slot_index = rescheduling_plan[1][idx_of_dev_in_plan]
+					periods_from_now = rescheduling_plan[2][idx_of_dev_in_plan]
+
+					#if slot_index == 53:
+					#	print(len(time_slot_assignments[slot_index]),len(time_slot_assignments_ext[slot_index][0]))
+					#	if not len(time_slot_assignments[slot_index])== len(time_slot_assignments_ext[slot_index][0]):
+					#		print([br['device_id'] for br in time_slot_assignments[slot_index]], "\n", time_slot_assignments_ext[slot_index][0])
 					
 					eds[device_ID].period_until_downlink = -1
+
+					# We remove the device from slot number: device_slot
+					# Later we assign it to slot number: slot_index
 
 					for index, device in enumerate(time_slot_assignments[device_slot]):
 						if device['device_id'] == device_ID:
@@ -267,9 +282,6 @@ def main(n):
 							time_slot_assignments_ext[device_slot][1].pop(index)
 							time_slot_assignments_ext[device_slot][2].pop(index)
 
-					slot_index = rescheduling_plan[1][idx_of_dev_in_plan]
-					periods_from_now = rescheduling_plan[2][idx_of_dev_in_plan]
-
 					time_slot_assignments[slot_index].append({"device_id": device_ID, "offset": periods_from_now, "period": eds[device_ID].period})
 
 					if not time_slot_assignments_ext[slot_index]:
@@ -281,6 +293,9 @@ def main(n):
 						time_slot_assignments_ext[slot_index][0].append(device_ID)
 						time_slot_assignments_ext[slot_index][1].append(periods_from_now)
 						time_slot_assignments_ext[slot_index][2].append(eds[device_ID].period)
+
+					#if slot_index == 53:
+						#print(len(time_slot_assignments[slot_index]),len(time_slot_assignments_ext[slot_index][0]))
 
 					# Time when schedule starts over next period
 					schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
@@ -313,6 +328,8 @@ def main(n):
 
 
 				elif eds[device_ID].global_period_rescheduling == current_period:
+					#if device_slot == 53:
+					#	print("===> 2")
 					# Remove from time_slot_assignments
 
 					eds[device_ID].period_until_downlink = -1
@@ -333,12 +350,22 @@ def main(n):
 					elif version == 'optimized_v1':
 						slot_index, periods_from_now = optimized_assignment_v1(eds, eds[device_ID].period, time_slot_assignments_ext, time_slots_start_times, simulation_clock, slot_count, period, slots_to_consider_in_search_of_optimal, sim_end, int(eds[device_ID].period/period))
 					elif version == 'optimized_v2':
-						rescheduling_plan = optimized_assignment_v2(time_slot_assignments_ext, time_slots_start_times, window_periods, window_slots, simulation_clock, period, slot_count, slots_to_consider_in_search_of_optimal, min_device_period, max_device_period, sim_end)
+						#print("SLOT 53 BEFORE PLAN IS MADE",len(time_slot_assignments[53]),len(time_slot_assignments_ext[53][0]))
+						current_device = [device_ID, eds[device_ID].period]
+						rescheduling_plan = optimized_assignment_v2(current_device, time_slot_assignments_ext, time_slots_start_times, window_periods, window_slots, simulation_clock, period, slot_count, slots_to_consider_in_search_of_optimal, min_device_period, max_device_period, sim_end)
 						plan_outdated_time = simulation_clock + (window_periods * period) + ((window_slots+1) * (period/slot_count))	# Adding 1 to window_slots to make the plan get outdated one slot later in order to avoid edge cases 
+						# Find the index of the current device in the rescheduling plan to see what the new slot and offset is
+						idx_of_dev_in_plan = rescheduling_plan[0].index(device_ID)
+						slot_index = rescheduling_plan[1][idx_of_dev_in_plan]
+						periods_from_now = rescheduling_plan[2][idx_of_dev_in_plan]
+						#print("Got that index for device ", device_ID,"slot", slot_index)
+						#print("SLOT 53 AFTER PLAN IS MADE",len(time_slot_assignments[53]),len(time_slot_assignments_ext[53][0]))
+
 					elif version == 'random':
 						slot_index = random.randint(0, slot_count-1)
 						periods_from_now = 0
 
+					
 					time_slot_assignments[slot_index].append({"device_id": device_ID, "offset": periods_from_now, "period": eds[device_ID].period})
 
 					if not time_slot_assignments_ext[slot_index]:
@@ -350,6 +377,11 @@ def main(n):
 						time_slot_assignments_ext[slot_index][0].append(device_ID)
 						time_slot_assignments_ext[slot_index][1].append(periods_from_now)
 						time_slot_assignments_ext[slot_index][2].append(eds[device_ID].period)
+
+					#if slot_index == 53:
+					#	print("SPZ",len(time_slot_assignments[slot_index]),len(time_slot_assignments_ext[slot_index][0]))
+					#	if not len(time_slot_assignments[slot_index])== len(time_slot_assignments_ext[slot_index][0]):
+							#print([br['device_id'] for br in time_slot_assignments[slot_index]], "\n", time_slot_assignments_ext[slot_index][0])
 
 					# Time when schedule starts over next period
 					schedule_start_next_period = (math.floor((simulation_clock+period)/period))*period
@@ -371,6 +403,10 @@ def main(n):
 					eds[device_ID].update_rescheduling_shifts(time_shift)
 					eds[device_ID].adjust_tx_time(time_shift, global_period)
 
+
+					#print(eds[device_ID].rescheduling_shifts)
+
+
 					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slot_assignments_ext[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI, sim_end)
 					time_slot_assignments_ext[slot_index][3] = find_compatible_periods_for_slot(slot_index, time_slot_assignments_ext, time_slots_start_times, period, min_device_period, max_device_period)
 
@@ -384,7 +420,8 @@ def main(n):
 
 				# If drift correction is necessary. Since period_until_downlink was updated to 1 last iteration then it is actually 0 now
 				elif eds[device_ID].period_until_downlink <= 1:
-
+					#if device_slot == 53:
+						#print("===> 3")
 					eds[device_ID].period_until_downlink = -1
 					
 					time_slot_this_period = current_period*period + time_slots_start_times[device_slot]
@@ -401,9 +438,11 @@ def main(n):
 
 				# If NO drift correction is necessary
 				else:
+					#if device_slot == 53:
+					#	print("===> 4")
 					# If two or more uplinks have been received since drift correction
 					if len(eds[device_ID].uplink_times) >= 2:
-
+						
 						#if device_ID == 389:
 						#	print("389 in slot", device_slot, current_tx_time/period, eds[device_ID].nextTX/period, eds[device_ID].nextTX_min_period, "no downlink")
 
@@ -420,6 +459,9 @@ def main(n):
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
+
+				#if device_slot == 53:
+				#	print("MFFFERRR",len(time_slot_assignments[device_slot]),len(time_slot_assignments_ext[device_slot][0]))
 
 		elif event.event_type == 'RX_START':	
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
@@ -479,42 +521,84 @@ def main(n):
 	avg_period = all_periods_summed/n
 
 	#print("\nOverall utilization:", overall_utilization)
-	#print("Fully utilized slots:", fully_utilized_slots)
-	print(n, "number of nodes")
-	number_of_min_periods_during_simulation = sim_end // period
-	max_uplink_time_during_simulation = number_of_min_periods_during_simulation * slot_count * tx_duration
-	print("Uplink utilization:", channel.accumulated_uplink_time/max_uplink_time_during_simulation)
-	print("Number of collisions:", channel.number_of_collisions,"\n")
+	#print("Fully utilized slots:", fully_utilized_slots
 
 
 	number_of_rescheduling_shifts = 0
 	accumulated_rescheduling_shift_in_min_periods = 0
 	for ed in eds:
 		for shift in ed.rescheduling_shifts:
+			#print("")
 			number_of_rescheduling_shifts += 1
 			accumulated_rescheduling_shift_in_min_periods += shift/period
-	#	print(ed.rescheduling_shifts_in_dev_periods)
-	#	print(ed.rescheduling_shifts)
 
-	print("Rescheduling shifts", number_of_rescheduling_shifts, "average shift is", accumulated_rescheduling_shift_in_min_periods/number_of_rescheduling_shifts)
 
-	#for ed in eds:
-		#print(ed.energy_consumption)
+	print(n, "number of nodes")
+	number_of_min_periods_during_simulation = sim_end // period
+	max_uplink_time_during_simulation = number_of_min_periods_during_simulation * slot_count * tx_duration
+	print("Uplink utilization:", channel.accumulated_uplink_time/max_uplink_time_during_simulation)
+	print("Number of collisions:", channel.number_of_collisions)
 
-	plot_energy_consumption_distribution(eds)
-	plot_rescheduling_shift_swarm_distributions(eds, period)
-	plot_number_of_reschedulings(eds)
+	if not number_of_rescheduling_shifts == 0:
+		print("Rescheduling count", number_of_rescheduling_shifts, "\nAverage number of reschedulings", number_of_rescheduling_shifts/n, "\nAverage shift is", accumulated_rescheduling_shift_in_min_periods/number_of_rescheduling_shifts)
+
+	accumulated_energy_consumption = 0
+	for ed in eds:
+		accumulated_energy_consumption += ed.energy_consumption
+
+	print("Average energy consumption", accumulated_energy_consumption/n, "joules\n")
+
+	if axs_energy == None or axs_shift == None or axs_resched == None:
+		axs_energy = None
+		axs_shift = None
+		axs_resched = None
+	plot_energy_consumption_distribution(eds, axs_energy)
+	plot_rescheduling_shift_swarm_distributions(eds, period, axs_shift)
+	plot_number_of_reschedulings(eds, axs_resched)
+
 	#print("Average period", avg_period)
 
 
 if __name__=="__main__":
 	random.seed(99)
 
-	pr = cProfile.Profile()
+	fig_energy, axs_energy = plt.subplots(2, 2, figsize=(12, 8))
+	fig_shift, axs_shift = plt.subplots(2, 2, figsize=(12, 8))
+	fig_resched, axs_resched = plt.subplots(2, 2, figsize=(12, 8))
+
+	ns = [1000, 1500]
+	versions = ['random','next_slot']
+	#versions = ['optimized_v1']
+
+	for i, n in enumerate(ns):
+		for j, v in enumerate(versions):
+			ax_e = axs_energy[i][j]
+			ax_s = axs_shift[i][j]
+			ax_r = axs_resched[i][j]
+
+			main(n=n, version=v, axs_energy=ax_e, axs_shift=ax_s, axs_resched=ax_r)
+			#main(n=n, version=v, axs_energy=None, axs_shift=None, axs_resched=None)
+			ax_e.set_title(f"Energy - {v}, n={n}")
+			ax_s.set_title(f"Resched Shift - {v}, n={n}")
+			ax_r.set_title(f"Resched Count - {v}, n={n}")
+
+	fig_energy.suptitle("Energy Consumption Across Scenarios")
+	fig_shift.suptitle("Rescheduling Shift Across Scenarios")
+	fig_resched.suptitle("Rescheduling Count Across Scenarios")
+	fig_energy.savefig("energy_consumption.png", dpi=300, bbox_inches='tight')
+	fig_shift.savefig("rescheduling_shift.png", dpi=300, bbox_inches='tight')
+	fig_resched.savefig("rescheduling_count.png", dpi=300, bbox_inches='tight')
+
+	plt.tight_layout()
+	plt.show()
+
+	'''pr = cProfile.Profile()
 	pr.enable()
-	ns = [2000]
-	#ns = [250,500,750,1000,1250,1500,1750,2000]
+	ns = [2000, 3000]
+	#versions = ['random', 'optimized_v1']
+	versions = ['optimized_v1']
 	for n in ns:
-		main(n=n)
+		for v in versions:
+			main(n=n, version=v)
 	pr.disable()
-	pr.dump_stats("profile_output.prof")
+	pr.dump_stats("profile_output.prof")'''

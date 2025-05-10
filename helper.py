@@ -8,6 +8,7 @@ import matplotlib.patches as mpatches
 import colorsys
 from collections import defaultdict
 import seaborn as sns
+import copy
 
 def lcm(a, b):
 	return abs(a * b) // math.gcd(a, b)
@@ -278,7 +279,7 @@ def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, one_slot
         eds[device['device_id']].global_period_rescheduling = -1
         #periods.append(device["period"])
 
-    cpy_slot_assignments = one_slot_assignments.copy()
+    cpy_slot_assignments = copy.deepcopy(one_slot_assignments)
     
     current_period = math.floor(current_time / min_period)
         
@@ -318,6 +319,8 @@ def calculate_time_slot_collisions(eds, slot_idx, one_slot_assignments, one_slot
         # If there is a collision
         if colliding_pair:
             collision_devices = [colliding_pair[0], colliding_pair[1]]
+            #print(collision_devices, len(cpy_slot_assignments), device_count, len(periods))
+            #print(slot_idx, len(cpy_slot_assignments), len(periods), len(offsets))
             their_ids = cpy_slot_assignments[collision_devices[0]]['device_id'], cpy_slot_assignments[collision_devices[1]]['device_id']
 
             random.shuffle(collision_devices)
@@ -514,7 +517,7 @@ def optimized_assignment_v1(eds, new_period, assigned_slots_ext, start_times, cu
 
 
 # Either we specify some number of periods or slots for the window. If specifying slots then the window is less than one period
-def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, window_slots, current_time, min_period, slot_count, consider_x_slots, dev_period_lower_bound, dev_period_upper_bound, sim_end):
+def optimized_assignment_v2(current_device, assigned_slots_ext, start_times, window_periods, window_slots, current_time, min_period, slot_count, consider_x_slots, dev_period_lower_bound, dev_period_upper_bound, sim_end):
 
 	# SUDDENLY IT IS NOT ENOUGH TO HAVE THE CURRENT RESCHEDULING SYSTEM. SINCE THIS NEW PROCEDURE CALCULATES THE NEW SLOTS AND OFFSETS OF ALL DEVICES IN THIS FUNCTION WE NEED TO RETURN A LIST WITH INFORMATION ABOUT WHERE THE PLANNED RESCHEDULING WILL MAKE CHANGES AND HOW THOSE CHANGES LOOK [[id...],[slot...],[offset...]].
 	# THIS MEANS THAT WE NEED TO CHECK IF EVENT.DEVICE_ID IS IN THE RESCHEDULING PLANS. THEN POP THE DEVICE FROM THE PLANS.
@@ -537,11 +540,12 @@ def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, win
 		slot_list_starting_w_next_slot = slot_list_starting_w_next_slot[:window_slots]
 
 	# List will later only contain devices outside of window
-	temp_ext = assigned_slots_ext.copy()
+	temp_ext = copy.deepcopy(assigned_slots_ext)
 
 	# List over all devices in window [[id...],[offset...],[period...]]
-	devices_in_window = [[],[],[]]
-	for p in range(window_periods):
+	devices_in_window = [[current_device[0]],[0],[current_device[1]]]
+
+	'''for p in range(window_periods):
 		for s in slot_list_starting_w_next_slot:
 			for i, offset in enumerate(assigned_slots_ext[s][1]):
 				# If one of the devices assigned to slot s has offset equal to the period p we are currently checking
@@ -555,8 +559,25 @@ def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, win
 					temp_ext[s][0].pop(i)
 					temp_ext[s][1].pop(i)
 					temp_ext[s][2].pop(i)
+	'''
 
-	print(devices_in_window, current_time/min_period)
+	for p in range(window_periods):
+		for s in slot_list_starting_w_next_slot:
+			indices_to_remove = []
+			for i, offset in enumerate(assigned_slots_ext[s][1]):
+				if offset == p:
+					devices_in_window[0].append(assigned_slots_ext[s][0][i])
+					devices_in_window[1].append(assigned_slots_ext[s][1][i])
+					devices_in_window[2].append(assigned_slots_ext[s][2][i])
+					indices_to_remove.append(i)
+
+			# Remove in reverse order to avoid index shifting issues
+			for i in reversed(indices_to_remove):
+				temp_ext[s][0].pop(i)
+				temp_ext[s][1].pop(i)
+				temp_ext[s][2].pop(i)
+
+	#print(devices_in_window, current_time/min_period)
 
 	# Recalculate compatibilities for temp_ext[]
 	for slot_idx in range(len(temp_ext)):
@@ -626,6 +647,8 @@ def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, win
 
 						# Recalculate compatibility
 						temp_ext[slot][3] = find_compatible_periods_for_slot(slot_idx, temp_ext, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound)
+						# TODO!!!!!!!!!!!!!!!!!!!
+						# THIS temp[slot] slot-value is incorrect I think. Like the ones below aswell
 
 						devices_to_pop.append(dev_id)
 
@@ -649,8 +672,6 @@ def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, win
 				devices_in_window[2].pop(idx)
 				break
 
-	#print("Compatible devices:", devices_to_pop)
-	#print("Find best slot of:", devices_in_window[0])
 
 	for idx in range(len(devices_in_window[0])):
 
@@ -676,7 +697,7 @@ def optimized_assignment_v2(assigned_slots_ext, start_times, window_periods, win
 		temp_ext[slot][2].append(dev_period)
 
 
-	print("PLAN:\nIDs:",plan[0], "\nSlots", plan[1], "\nOffsets", plan[2])
+	#print("PLAN:\nIDs:",plan[0], "\nSlots", plan[1], "\nOffsets", plan[2])
 	return plan
 
 
@@ -944,40 +965,64 @@ def plot_rescheduling_shift_distributions(eds, min_period):
     plt.tight_layout()
     plt.show()
 
+def plot_rescheduling_shift_swarm_distributions(eds, period, ax):
+	shifts_in_microseconds = [shift / period for ed in eds for shift in ed.rescheduling_shifts]
 
-def plot_rescheduling_shift_swarm_distributions(eds, min_period):
-    shifts_in_microseconds = [shift/min_period for ed in eds for shift in ed.rescheduling_shifts]
+	if ax == None:
+		plt.figure(figsize=(12, 6))
+		sns.stripplot(data=shifts_in_microseconds, orient="h", jitter=0.25, alpha=0.5, size=3)
+		plt.title('Rescheduling Shifts (in Min Periods)')
+		plt.xlabel('Shift (Min Periods)')
+		plt.grid(True)
+		plt.tight_layout()
+		plt.xlim((0,40))
+		plt.savefig("rescheduling_shifts.png", dpi=300, bbox_inches='tight')
+		#plt.show()
+	else:
+		sns.stripplot(
+			x=shifts_in_microseconds,
+			orient="h",
+			jitter=0.25,
+			alpha=0.5,
+			size=3,
+			ax=ax
+		)
 
-    plt.figure(figsize=(12, 6))
-    sns.stripplot(data=shifts_in_microseconds, orient="h", jitter=0.25, alpha=0.5, size=3)
-    plt.title('Rescheduling Shifts (in Min Periods)')
-    plt.xlabel('Shift (Min Periods)')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig("rescheduling_shifts.png", dpi=300, bbox_inches='tight')
-    #plt.show()
+		ax.set_title('Rescheduling Shifts (in Min Periods)')
+		ax.set_xlabel('Shift (Min Periods)')
+		ax.grid(True)
+		ax.set_xlim((0,40))
 
 
-def plot_number_of_reschedulings(eds):
+
+def plot_number_of_reschedulings(eds, ax):
     # Count reschedulings for each device
     rescheduling_counts = [len(ed.rescheduling_shifts) for ed in eds]
-
-    plt.figure(figsize=(12, 6))
-
-    # Histogram of number of reschedulings
     bins = np.arange(0, max(rescheduling_counts)+2) - 0.5  # To center bars
-    plt.hist(rescheduling_counts, bins=bins, color='steelblue', edgecolor='black', log=True)
 
-    plt.title("Number of Reschedulings per Device")
-    plt.xlabel("Number of Reschedulings")
-    plt.ylabel("Number of Devices (log scale)")
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+    if ax == None:
+        plt.figure(figsize=(12, 6))
 
-    plt.xticks(np.arange(0, max(rescheduling_counts)+1))
-    plt.tight_layout()
-    plt.savefig("number_of_rescheduling.png", dpi=300, bbox_inches='tight')
+        plt.hist(rescheduling_counts, bins=bins, color='steelblue', edgecolor='black', log=True)
 
-def plot_energy_consumption_distribution(eds):
+        plt.title("Number of Reschedulings per Device")
+        plt.xlabel("Number of Reschedulings")
+        plt.ylabel("Number of Devices (log scale)")
+        plt.grid(True, which='both', linestyle='--', linewidth=0.5)
+
+        plt.xticks(np.arange(0, max(rescheduling_counts)+1))
+        plt.tight_layout()
+        plt.savefig("number_of_rescheduling.png", dpi=300, bbox_inches='tight')
+    else:
+
+	    # Histogram of number of reschedulings
+	    ax.hist(rescheduling_counts, bins=bins, color='steelblue', edgecolor='black', log=True)
+	    ax.set_title("Number of Reschedulings per Device")
+	    ax.set_xlabel("Number of Reschedulings")
+	    ax.set_ylabel("Number of Devices (log scale)")
+	    ax.grid(True)
+
+def plot_energy_consumption_distribution(eds, ax):
     # Extract all energy consumption values (in joules)
     energy_values = [ed.energy_consumption for ed in eds if ed.energy_consumption is not None]
 
@@ -989,13 +1034,30 @@ def plot_energy_consumption_distribution(eds):
     bin_width = (max(energy_values) - min(energy_values)) / 100  # 100 bins
     bins = np.arange(min(energy_values), max(energy_values) + bin_width, bin_width)
 
-    # Create histogram
-    plt.figure(figsize=(10, 6))
+    if ax == None:
+        plt.figure(figsize=(10, 6))
+        plt.hist(energy_values, bins=bins, color='mediumseagreen', edgecolor='black')
+        plt.title('Distribution of End Device Energy Consumption')
+        plt.xlabel('Energy Consumption (Joules)')
+        plt.ylabel('Number of Devices')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig("energy_consumption.png", dpi=300, bbox_inches='tight')
+    else:
+
+        # Create histogram
+        ax.hist(energy_values, bins=bins, color='mediumseagreen', edgecolor='black')
+        ax.set_title("Energy Distribution")
+        ax.set_xlabel("Energy (J)")
+        ax.set_ylabel("Devices")
+        ax.grid(True)
+
+    '''plt.figure(figsize=(10, 6))
     plt.hist(energy_values, bins=bins, color='mediumseagreen', edgecolor='black')
     plt.title('Distribution of End Device Energy Consumption')
     plt.xlabel('Energy Consumption (Joules)')
     plt.ylabel('Number of Devices')
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("energy_consumption.png", dpi=300, bbox_inches='tight')
+    plt.savefig("energy_consumption.png", dpi=300, bbox_inches='tight')'''
     #plt.show()
