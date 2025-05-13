@@ -140,3 +140,4 @@ class ED:
 	def update_rescheduling_shifts(self, shift):
 		self.rescheduling_shifts.append(shift)
 		self.rescheduling_shifts_in_dev_periods.append(shift/self.period)
+		return len(self.rescheduling_shifts)
