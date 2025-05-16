@@ -652,7 +652,6 @@ if __name__=="__main__":
 					elif len(versions) == 1:
 						ix = int(i / 2)
 						jx = i % 2
-
 					
 					main(n=n, version=v, axs_energy=None, axs_shift=None, axs_resched=None)
 

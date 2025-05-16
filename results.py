@@ -1,3 +1,4 @@
+from itertools import product
 import math
 import json
 import matplotlib.pyplot as plt
@@ -112,7 +113,7 @@ def plot_avg_downlink(data, nw_sz):
     sns.lineplot(data=df, x="network_size", y="avg_resched_count", hue="version", marker="o")
     plt.title("Average number of downlinks each hour for different network sizes")
     plt.xlabel("Number of Devices")
-    plt.ylabel("Avg Rescheduling Shift (hours)")
+    plt.ylabel("Average numbe of downlinks per hours")
     plt.tight_layout()
     plt.show()
 
@@ -375,28 +376,137 @@ def plot_avg_resched_count_by_period_group_bar(data, nw_sz, yaxis_bound=None):
     plt.tight_layout()
     plt.show()
 
+def plot_rescheduling_probability_by_period_group(data, nw_sz):
+    grouped_resched = defaultdict(float)
+    grouped_success = defaultdict(int)
 
-# Is it actually the correct normalization? 
-'''def plot_energy_by_period_group(data):
-    grouped = group_indexed_data(data, "energy_per_device_period", "device_per_period")
-    rows = []
-    for (version, net_size, group_label), vals in grouped.items():
-        rows.append({
-            "version": version,
-            "network_size": net_size,
-            "period_group": group_label,
-            "avg_energy": sum(vals) / len(vals)
-        })
+    for entry in data:
+        rescheds = entry.get("resched_count_per_device_period", [])
+        successes = entry.get("successful_txs_per_device_period", [])
+        version = entry["version"]
+        net_size = entry["network_size"]
+        if net_size not in nw_sz:
+            continue
 
-    df = pd.DataFrame(rows)
-    plt.figure(figsize=(12, 6))
-    sns.lineplot(data=df, x="network_size", y="avg_energy", hue="period_group", style="version", marker="o")
-    plt.title("Avg Energy Consumption per Period Group vs Network Size")
-    plt.xlabel("Number of Devices")
-    plt.ylabel("Avg Energy Consumption (J)")
-    plt.legend(title="Period Group", bbox_to_anchor=(1.05, 1), loc='upper left')
+        for i in range(min(len(rescheds), len(successes))):
+            period = 20 + i
+            if period > 100:
+                continue
+            group_start = (period // 10) * 10
+            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            key = (version, net_size, group_label)
+
+            grouped_resched[key] += rescheds[i]
+            grouped_success[key] += successes[i]
+
+    desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
+    versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_resched)]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 100, 10)] + ["100-100"]
+    hue_order = sorted(set(nw_sz))
+
+    cols = 2
+    rows = math.ceil(len(versions_in_data) / cols)
+    fig, axs = plt.subplots(rows, cols, figsize=(14, 5 * rows), sharex=True)
+    axs = axs.flatten()
+
+    for idx, version in enumerate(versions_in_data):
+        rows_data = []
+        for period_group, net_size in product(period_groups, hue_order):
+            key = (version, net_size, period_group)
+            total_resched = grouped_resched.get(key, 0.0)
+            total_success = grouped_success.get(key, 0)
+            resched_prob = total_resched / total_success if total_success > 0 else 0
+
+            rows_data.append({
+                "network_size": net_size,
+                "period_group": period_group,
+                "resched_probability": resched_prob
+            })
+
+        df = pd.DataFrame(rows_data)
+
+        sns.barplot(data=df, x="period_group", y="resched_probability", hue="network_size", hue_order=hue_order, ax=axs[idx])
+        axs[idx].set_title(f"Rescheduling Probability ({version})")
+        axs[idx].set_ylim((0,1.03))
+        axs[idx].set_xlabel("Device Period Group (min periods)")
+        axs[idx].set_ylabel("Probability of Rescheduling")
+        axs[idx].tick_params(axis='x', rotation=45)
+        axs[idx].legend(title="Network Size", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+    for j in range(len(versions_in_data), len(axs)):
+        fig.delaxes(axs[j])
+
     plt.tight_layout()
-    plt.show()'''
+    plt.show()
+
+
+def plot_data_unavailability_by_period_group(data, nw_sz, yaxis_bound=None):
+    grouped_unavailable = defaultdict(int)
+    grouped_total = defaultdict(int)
+
+    for entry in data:
+        shifts_per_device = entry.get("all_resched_shifts_per_device", [])
+        periods = entry.get("device_periods", [])
+        version = entry["version"]
+        net_size = entry["network_size"]
+
+        if net_size not in nw_sz:
+            continue
+
+        for i in range(min(len(shifts_per_device), len(periods))):
+            period = periods[i]
+            if period > 100:
+                continue
+            group_start = (period // 10) * 10
+            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            key = (version, net_size, group_label)
+
+            shifts = shifts_per_device[i]
+            grouped_total[key] += len(shifts)
+            grouped_unavailable[key] += sum(1 for s in shifts if s > period)
+
+    desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
+    versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_total)]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 100, 10)] + ["100-100"]
+    hue_order = sorted(set(nw_sz))
+
+    cols = 2
+    rows = math.ceil(len(versions_in_data) / cols)
+    fig, axs = plt.subplots(rows, cols, figsize=(14, 5 * rows), sharex=True)
+    axs = axs.flatten()
+
+    for idx, version in enumerate(versions_in_data):
+        rows_data = []
+        for period_group, net_size in product(period_groups, hue_order):
+            key = (version, net_size, period_group)
+            total = grouped_total.get(key, 0)
+            unavailable = grouped_unavailable.get(key, 0)
+            rows_data.append({
+                "network_size": net_size,
+                "period_group": period_group,
+                "unavailable_count": unavailable,
+                "availability_ratio": 1 - (unavailable / total) if total > 0 else 1.0
+            })
+
+        df = pd.DataFrame(rows_data)
+
+        sns.barplot(data=df, x="period_group", y="unavailable_count", hue="network_size", hue_order=hue_order, ax=axs[idx])
+        axs[idx].set_yscale("log")
+        axs[idx].set_ylim((-0.5,2750))
+        axs[idx].set_title(f"Unavailable Transmissions ({version})")
+        axs[idx].set_xlabel("Device Period Group (min periods)")
+        axs[idx].set_ylabel("Unavailable Shifts Count")
+        axs[idx].tick_params(axis='x', rotation=45)
+        axs[idx].legend(title="Network Size", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+        if yaxis_bound is not None:
+            axs[idx].set_ylim((0, yaxis_bound))
+
+    for j in range(len(versions_in_data), len(axs)):
+        fig.delaxes(axs[j])
+
+    plt.tight_layout()
+    plt.show()
 
 def plot_energy_by_period_group(data):
     grouped_energy = defaultdict(float)
@@ -457,6 +567,73 @@ def plot_energy_by_period_group(data):
     plt.tight_layout()
     plt.show()
 
+
+def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
+    grouped_energy = defaultdict(float)
+    grouped_success = defaultdict(int)
+
+    for entry in data:
+        energy = entry.get("energy_per_device_period", [])
+        success = entry.get("successful_txs_per_device_period", [])
+        version = entry["version"]
+        net_size = entry["network_size"]
+        if net_size not in nw_sz:
+            continue
+
+        for i in range(min(len(energy), len(success))):
+            period = 20 + i
+            if period > 100:
+                continue
+            group_start = (period // 10) * 10
+            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            key = (version, net_size, group_label)
+
+            grouped_energy[key] += energy[i]
+            grouped_success[key] += success[i]
+
+    desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
+    versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_energy)]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 100, 10)] + ["100-100"]
+    hue_order = sorted(set(nw_sz))
+
+    cols = 2
+    rows = math.ceil(len(versions_in_data) / cols)
+    fig, axs = plt.subplots(rows, cols, figsize=(14, 5 * rows), sharex=True)
+    axs = axs.flatten()
+
+    for idx, version in enumerate(versions_in_data):
+        rows_data = []
+        for period_group, net_size in product(period_groups, hue_order):
+            key = (version, net_size, period_group)
+            total_success = grouped_success.get(key, 0)
+            total_energy = grouped_energy.get(key, 0.0)
+            avg_energy_per_tx = total_energy / total_success if total_success > 0 else 0
+
+            rows_data.append({
+                "network_size": net_size,
+                "period_group": period_group,
+                "energy_per_tx": avg_energy_per_tx
+            })
+
+        df = pd.DataFrame(rows_data)
+
+        sns.barplot(data=df, x="period_group", y="energy_per_tx", hue="network_size", hue_order=hue_order, ax=axs[idx])
+        axs[idx].set_title(f"Energy per Successful Tx ({version})")
+        axs[idx].set_ylim((0,1.08))
+        axs[idx].set_xlabel("Device Period Group (min periods)")
+        axs[idx].set_ylabel("Energy per Tx (J)")
+        axs[idx].tick_params(axis='x', rotation=45)
+        axs[idx].legend(title="Network Size", bbox_to_anchor=(1.05, 1), loc="upper left")
+
+        if yaxis_bound is not None:
+            axs[idx].set_ylim((0, yaxis_bound))
+
+    for j in range(len(versions_in_data), len(axs)):
+        fig.delaxes(axs[j])
+
+    plt.tight_layout()
+    plt.show()
+
 # ----------- USAGE ----------------
 
 # Replace these with your actual filenames and version names
@@ -473,24 +650,32 @@ for file, name in files:
 
 network_sizes = [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600]
 network_sizes_group_bar = [600, 1200, 1800, 2400, 3000, 3600]
-# Plot 1
+
+
+# Utilization
 plot_utilization(all_data, network_sizes)
 
-# Plot 2
+# Average rescheduling shift
 plot_avg_shift(all_data, network_sizes)
 
-# Plot 2A
+# Average of all downlink communication. My favorite
 plot_avg_downlink(all_data, network_sizes)
 
-# TODO: Make plot with average number of rescheduling
-
-# Plot 3A
-#plot_avg_shift_by_period_group(all_data, yaxis_bound=100)
+# Average rescheduling shift. Grouped by device period (bars are missing since some networks sizes don't have any rescheduling)
 plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
 
-# Plot 3B
-#plot_avg_resched_count_by_period_group(all_data, yaxis_bound=None)
-plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=27)
+# Average number of reschedulings. Grouped by device period
+plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
 
-# Plot 4
-plot_energy_by_period_group(all_data)
+# Number of reschedulings divided by the number of successful transmissions
+plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+
+# Unavailable if shift is greater then threshold = one device period (Does not look good. Maybe make a table instead)
+plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+
+
+#plot_energy_by_period_group(all_data)
+
+# Energy per successful tx
+plot_energy_efficiency_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+
