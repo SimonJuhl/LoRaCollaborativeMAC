@@ -82,6 +82,7 @@ class ED:
 		self.voltage = 3.3
 		self.rescheduling_shifts = []
 		self.rescheduling_shifts_in_dev_periods = []
+		self.drift_correction_count = 0
 
 	def update_next_tx_time(self):
 		drift_per_microsecond = self.drift / 1_000_000
@@ -141,3 +142,6 @@ class ED:
 		self.rescheduling_shifts.append(shift)
 		self.rescheduling_shifts_in_dev_periods.append(shift/self.period)
 		return len(self.rescheduling_shifts)
+
+	def update_drift_correction_count(self):
+		self.drift_correction_count += 1
