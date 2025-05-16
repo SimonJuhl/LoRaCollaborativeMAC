@@ -504,11 +504,14 @@ def find_best_time_slot_in_window(dev_id, assigned_slots_ext, start_times, curre
 
 
 				#if 1893 == dev_id and 1057 in dev_ids:
-				debug1 = 1057
-				debug2 = 1893
+
+				#debug1 = 489
+				#debug2 = 2717
+				debug1 = 1750
+				debug2 = 314
 				#if debug1 == dev_id and debug2 in dev_ids:
-				#	skrt = dev_ids.index(debug2)
-				#	print("find_best_time_slot_in_window", "\nOffset of dev", debug2, ":" ,offsets[skrt], ". Dev", debug1, "gets offset:", check_offset, f". Dev {debug1} and {debug2} collide in:", collision_time, ". Current time", current_time/min_period)
+					#skrt = dev_ids.index(debug2)
+					#print("find_best_time_slot_in_window", "\nOffset of dev", debug2, ":" ,offsets[skrt], ". Dev", debug1, "gets offset:", check_offset, f". Dev {debug1} and {debug2} collide in:", collision_time, ". Current time", current_time/min_period)
 				#if 380 == dev_id:
 				#	print("\tash", slot, slot_list_starting_w_next_slot)
 					
@@ -529,9 +532,10 @@ def find_best_time_slot_in_window(dev_id, assigned_slots_ext, start_times, curre
 							longest_non_colliding_slot = idx
 							longest_non_colliding_time = non_colliding_time
 
-					#if 1057 == dev_id:
+					#if 489 == dev_id:
+					#if 1750 == dev_id:
 					#if dev_id == 1059 or dev_id == 1484:
-						#print("YO", dev_id, "is returning this [slot, check_offset, collision_time]", candidate_slots[longest_non_colliding_slot], "current time is ", current_time/min_period)
+					#	print("YO", dev_id, "is returning this [slot, check_offset, collision_time]", candidate_slots[longest_non_colliding_slot], "current time is ", current_time/min_period)
 					return candidate_slots[longest_non_colliding_slot]
 
 		check_offset += 1
@@ -620,7 +624,7 @@ def optimized_assignment_v1(eds, device_ID, assigned_slots_ext, start_times, cur
 
 
 
-def update_plan_only_compatible_slots(eds, plan, temp_ext, devices_to_pop, devices_in_window, slot_idx, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound, current_time, window_periods):
+def update_plan_only_compatible_slots(eds, device_ID, plan, temp_ext, devices_to_pop, devices_in_window, slot_idx, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound, current_time, window_periods):
 	# For each device in the window
 	for idx in range(len(devices_in_window[0])):
 
@@ -693,6 +697,9 @@ def update_plan_only_compatible_slots(eds, plan, temp_ext, devices_to_pop, devic
 								else:
 									pass
 
+						elif device_ID == dev_id and slot == dev_slot and (nexttx % min_period) > start_times[slot]:
+							update_offset_to_correct_period -= 1
+
 
 						# Add to plan which we use in simulator event loop
 						plan[0].append(dev_id) 
@@ -752,7 +759,7 @@ def adjust_offset(T_plan, T_actual, slot_idx, original_offset, min_period, start
 # Makes temporary ext list without these devices 
 
 # Either we specify some number of periods or slots for the window. If specifying slots then the window is less than one period
-def optimized_assignment_v2(eds, current_device, avg_resch, assigned_slots_ext, start_times, window_periods, window_slots, current_time, min_period, slot_count, consider_x_slots, dev_period_lower_bound, dev_period_upper_bound, sim_end):
+def optimized_assignment_v2(eds, current_device, assigned_slots_ext, start_times, window_periods, window_slots, current_time, min_period, slot_count, consider_x_slots, dev_period_lower_bound, dev_period_upper_bound, sim_end):
 
 	# SUDDENLY IT IS NOT ENOUGH TO HAVE THE CURRENT RESCHEDULING SYSTEM. SINCE THIS NEW PROCEDURE CALCULATES THE NEW SLOTS AND OFFSETS OF ALL DEVICES IN THIS FUNCTION WE NEED TO RETURN A LIST WITH INFORMATION ABOUT WHERE THE PLANNED RESCHEDULING WILL MAKE CHANGES AND HOW THOSE CHANGES LOOK [[id...],[slot...],[offset...]].
 	# THIS MEANS THAT WE NEED TO CHECK IF EVENT.DEVICE_ID IS IN THE RESCHEDULING PLANS. THEN POP THE DEVICE FROM THE PLANS.
@@ -819,14 +826,15 @@ def optimized_assignment_v2(eds, current_device, avg_resch, assigned_slots_ext, 
 	# Saved indexes of devices_in_window which have been added to a compatible slot, and thus need to be popped from devices_in_window
 	devices_to_pop = []
 
-	plan, temp_ext, devices_to_pop = update_plan_only_compatible_slots(eds, plan, temp_ext, devices_to_pop, devices_in_window, slot_idx, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound, current_time, window_periods)
+	plan, temp_ext, devices_to_pop = update_plan_only_compatible_slots(eds, current_device[0], plan, temp_ext, devices_to_pop, devices_in_window, slot_idx, start_times, min_period, dev_period_lower_bound, dev_period_upper_bound, current_time, window_periods)
 
-	debug_id = 686
-	#if debug_id in devices_in_window[0]:
-	#	print("This round", debug_id, current_time/min_period)
-	#if 642 in devices_in_window[0]:
-		#print("This round 642", current_time/min_period)
-
+	debug_id1 = 2717
+	debug_id2 = 489
+	#if debug_id1 in devices_in_window[0]:
+	#	print("This round", debug_id1, current_time/min_period)
+	#if debug_id2 in devices_in_window[0]:
+	#	print("This round", debug_id2, current_time/min_period)
+	
 	# Remove all devices that already have been assigned to a slot from devices_in_window
 	for dev_id_to_pop in devices_to_pop:
 		for idx, dev_id in enumerate(devices_in_window[0]):
@@ -838,10 +846,10 @@ def optimized_assignment_v2(eds, current_device, avg_resch, assigned_slots_ext, 
 				break
 
 
-	#if debug_id in devices_in_window[0]:
-	#	print("Trying to find the best", debug_id)
-	#if 642 in devices_in_window[0]:
-	#	print("Trying to find the best 642")
+	#if debug_id1 in devices_in_window[0]:
+	#	print("Tryiing to find the best", debug_id1, current_time/min_period)
+	#if debug_id2 in devices_in_window[0]:
+	#	print("Tryiing to find the best", debug_id2, current_time/min_period)
 
 	# For each 
 	for idx in range(len(devices_in_window[0])):
@@ -887,6 +895,13 @@ def optimized_assignment_v2(eds, current_device, avg_resch, assigned_slots_ext, 
 				else:
 					pass
 				#print("\t\tSame slot",update_offset_to_correct_period)
+		# If it is rescheduled into the same slot but the current time is after the start_times then the offsets of the already
+		# assigned devices is going to be updated already resulting in the offset that is just found being one too early
+		
+
+		elif dev_id == current_device[0] and best_slot[0] == dev_slot and (nexttx % min_period) > start_times[dev_slot]:
+			# Therefore this is -1 so that it will end up adding to the offset
+			update_offset_to_correct_period = -1
 
 		#if 686 == dev_id or 1576 == dev_id or 1471 == dev_id or 2 == dev_id:
 		#	print("If the planned offset correct? Dev id:",dev_id, ". update_offset_to_correct_period", update_offset_to_correct_period, ". Current time",current_time/min_period, ". Next tx", nexttx/min_period, ". start_times", start_times[best_slot[0]]/min_period)
@@ -894,19 +909,6 @@ def optimized_assignment_v2(eds, current_device, avg_resch, assigned_slots_ext, 
 
 		adj_offset = adjust_offset(current_time, nexttx, best_slot[0], dev_slot, min_period, start_times)
 		#print(best_slot[1]-dev_offset-update_offset_to_correct_period, adj_offset)
-
-		'''
-		if time_until_next_tx > time_until_next_slot:
-			passing_slot_x_times = int((time_until_next_tx-time_until_next_slot)/min_period)
-			update_offset_to_correct_period = passing_slot_x_times
-
-			if best_slot[0] == dev_slot:
-				update_offset_to_correct_period -= 1
-		'''
-
-		# Find out how many times we pass by the start_time before transmitting. update_offset_to_correct_period += for each
-
-		# If the slot is the same then update_offset_to_correct_period -= 1
 
 		#if 1608 == dev_id:
 		#	print("GODDAMN", best_slot[1]-dev_offset-update_offset_to_correct_period, best_slot[1], dev_offset, update_offset_to_correct_period)

@@ -71,7 +71,8 @@ class ED:
 		self.nextTX_min_period = -1					# This is set when device joins since min_periods tells us which min_period of a specific slot we are talking about
 		self.drift_direction = drift_direction
 		self.drift = drift
-		self.period_until_downlink = -1
+		self.period_until_downlink = float('inf')
+		self.perform_drift_correction = False
 		self.global_period_rescheduling = -1
 		self.uplink_times = []
 		self.joined = False
@@ -83,6 +84,8 @@ class ED:
 		self.rescheduling_shifts = []
 		self.rescheduling_shifts_in_dev_periods = []
 		self.drift_correction_count = 0
+		self.downlink_times = []
+		self.successful_tx_count = 0
 
 	def update_next_tx_time(self):
 		drift_per_microsecond = self.drift / 1_000_000
@@ -138,10 +141,15 @@ class ED:
 		self.energy_consumption += current_ampere*self.voltage*time_in_mode
 		self.last_mode_change = clock
 
-	def update_rescheduling_shifts(self, shift):
+	def update_rescheduling_shifts(self, shift, current_time):
 		self.rescheduling_shifts.append(shift)
 		self.rescheduling_shifts_in_dev_periods.append(shift/self.period)
-		return len(self.rescheduling_shifts)
+		self.downlink_times.append("resch" + str(current_time/self.min_period))
+		return len(self.rescheduling_shifts), sum(self.rescheduling_shifts)
 
-	def update_drift_correction_count(self):
+	def update_drift_correction_count(self, current_time):
 		self.drift_correction_count += 1
+		self.downlink_times.append("drift" + str(current_time/self.min_period))
+
+	def count_successful_tx(self):
+		self.successful_tx_count += 1
