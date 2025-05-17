@@ -12,41 +12,70 @@ class Channel:
 		self.accumulated_collision_time = 0
 		self.number_of_collisions = 0
 
+		self.ongoing_rx = 0
+		self.dev_started = -1
+
 
 	# TODO: Add throughput code
 	# TODO: Add code to not include collided transmissions into throughput
 
 	# Returns collision boolean
-	def change_mode(self, current_time, event):
-		if self.ongoing_transmissions == 0:
+	def change_mode(self, current_time, event, dev_id):
+		if self.ongoing_transmissions == 0 and self.ongoing_rx == 0:
 			if event == 'TX_START':
 				self.ongoing_transmissions += 1
 				self.transmission_started = current_time
-				return False
+				self.dev_started = dev_id
+				return False, self.dev_started
 			elif event == 'TX_END':
 				print("ERROR: CHANNEL IDLE")
 				sys.exit(0)
-		elif self.ongoing_transmissions >= 1:
+			elif event == 'RX_START':
+				self.ongoing_rx += 1
+				self.dev_started = dev_id
+				return False, self.dev_started
+			elif event == 'RX_END':
+				print("ERROR: CHANNEL IDLE")
+				sys.exit(0)
+		elif self.ongoing_transmissions >= 1 or self.ongoing_rx >= 1:
 			if event == 'TX_START':
 				self.ongoing_transmissions += 1
 				self.collision_detected = True
 				self.number_of_collisions += 1
-				#print("====================> COLLISION! Handle case", self.ongoing_transmissions)
-				return True
-				#sys.exit(0)
+				return True, self.dev_started
 			elif event == 'TX_END':
 				self.ongoing_transmissions -= 1
-				if self.ongoing_transmissions == 0:
+				# If this transmission was the only ongoing uplink and there are no ongoing downlinks, then no collision
+				if self.ongoing_transmissions == 0 and self.ongoing_rx == 0:
 					if self.collision_detected:
-						self.accumulated_collision_time += (current_time - self.transmission_started)
 						self.collision_detected = False
 					else:
 						self.accumulated_uplink_time += (current_time - self.transmission_started)
 					self.transmission_started = -1
-					return False
+					colliding_dev = self.dev_started
+					self.dev_started = -1
+					return False, colliding_dev
 				else:
 					# Collision
-					return True
+					return True, self.dev_started
+			elif event == 'RX_START':
+				self.ongoing_rx += 1
+				self.collision_detected = True
+				self.number_of_collisions += 1
+				return True, self.dev_started
+			elif event == 'RX_END':
+				self.ongoing_rx -= 1
+				if self.ongoing_transmissions == 0 and self.ongoing_rx == 0:
+					if self.collision_detected:
+						self.collision_detected = False
+					self.transmission_started = -1
+					colliding_dev = self.dev_started
+					self.dev_started = -1
+					return False, colliding_dev
+				else:
+					# Collision
+					return True, self.dev_started
+
 
 
 

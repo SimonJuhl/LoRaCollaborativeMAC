@@ -10,7 +10,7 @@ import cProfile
 
 drift_directions = [1,-1]
 min_device_period = 20
-max_device_period = 100
+max_device_period = 70
 def create_end_devices(n, period):
 
 	join_times = [random.randint(1, period*5) for _ in range(n)]
@@ -96,10 +96,15 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 	hourly_rescheduling = []
 	hourly_rescheduling_shift = []
+	hourly_collisions = []
+
 	last_hour_total_rescheduling = 0
 	last_hour_total_rescheduling_shift = 0
-	total_rescheduling = 0
-	heapq.heappush(event_queue, Event(time=1_000_000*60*60, event_type='GET_HOURLY_RESCHEDULING', device=-1, time_slot=-1))
+	last_hour_collisions = 0
+
+
+	
+	heapq.heappush(event_queue, Event(time=1_000_000*60*60, event_type='GET_HOURLY_DATA', device=-1, time_slot=-1))
 
 	window_periods = 1
 	slots_to_consider_in_search_of_optimal = 20
@@ -134,24 +139,28 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 				time_slot_assignments_ext[event.time_slot][1] = updated_offsets
 			heapq.heappush(event_queue, Event(time=event.time+period, event_type='UPDATE_OFFSET', device=-1, time_slot=event.time_slot))
 
-		elif event.event_type == 'GET_HOURLY_RESCHEDULING':
+		elif event.event_type == 'GET_HOURLY_DATA':
 
 			total_rescheduling = 0
 			for slot in rescheduling_count_each_device:
 				total_rescheduling += slot
+			hourly_rescheduling.append(total_rescheduling - last_hour_total_rescheduling)
+			last_hour_total_rescheduling = total_rescheduling
+
 
 			total_rescheduling_shift = 0
 			for slot in rescheduling_shift_each_device:
 				total_rescheduling_shift += slot
-
-
-			hourly_rescheduling.append(total_rescheduling - last_hour_total_rescheduling)
-			last_hour_total_rescheduling = total_rescheduling
-
 			hourly_rescheduling_shift.append(total_rescheduling_shift - last_hour_total_rescheduling_shift)
 			last_hour_total_rescheduling_shift = total_rescheduling_shift
 
-			heapq.heappush(event_queue, Event(time=event.time+1_000_000*60*60, event_type='GET_HOURLY_RESCHEDULING', device=-1, time_slot=-1))
+
+			total_collisions = channel.number_of_collisions
+			hourly_collisions.append(total_collisions-last_hour_collisions)
+			last_hour_collisions = total_collisions
+
+
+			heapq.heappush(event_queue, Event(time=event.time+1_000_000*60*60, event_type='GET_HOURLY_DATA', device=-1, time_slot=-1))
 
 		elif event.event_type == 'SHOW_SCHEDULE_ONE_SLOT':
 
@@ -175,7 +184,7 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 			collision = False
 			if eds[device_ID].joined == True:
-				collision = channel.change_mode(simulation_clock, 'TX_START')
+				collision, col_dev = channel.change_mode(simulation_clock, 'TX_START', device_ID)
 
 			# If the channel object returns a collision then the tx starts, then the tx will not be received.
 			# This means that the network server will not check if a drift correction needs to be performed.
@@ -269,7 +278,7 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 			# If data uplink
 			else:
 				# This should only be called when (eds[device_ID].joined == True) since join messages are collision free and not counted for in throughpt
-				collision = channel.change_mode(simulation_clock, 'TX_END')
+				collision, col_dev = channel.change_mode(simulation_clock, 'TX_END', device_ID)
 				
 				if not collision:
 					eds[device_ID].count_successful_tx()
@@ -281,7 +290,7 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 				# If the beginning of this transmission collided or if the end of this transmission collided with another tx
 				if event.collision or collision:
-					#print("slot",device_slot, "ID", device_ID, "is colliding at time", round(simulation_clock/period,3))
+					#print("slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(eds[device_ID].uplink_times[-1]+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
@@ -454,6 +463,7 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
 					
 
+				# If drift correction is necessary
 				elif eds[device_ID].period_until_downlink <= 2:
 					eds[device_ID].period_until_downlink = float('inf')
 					
@@ -462,6 +472,9 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 					eds[device_ID].update_drift_correction_count(simulation_clock)
 					eds[device_ID].adjust_tx_time(time_shift)
+
+					#if device_ID == 334:
+					#	print("YES CORRECT LETSGO", eds[device_ID].period_until_downlink)
 
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
@@ -480,6 +493,9 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					# By flooring the quotient we know to drift correct latest when this is 0
 					eds[device_ID].period_until_downlink = math.floor(t/eds[device_ID].period)
 
+					#if device_ID == 334:
+						#print("NO CORRECT LETSGO", eds[device_ID].period_until_downlink)
+
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
@@ -491,16 +507,32 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 		elif event.event_type == 'RX_START':	
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
-			channel.change_mode(simulation_clock, 'RX_START')
+			collision, col_dev = channel.change_mode(simulation_clock, 'RX_START', device_ID)
+
+			#if collision:
+			#	print("RX_START slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
+
 			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_duration), event_type='RX_END', device=device_ID))
 
 		elif event.event_type == 'RX_END':
 			eds[device_ID].change_mode(simulation_clock, 'RX_END')
-			channel.change_mode(simulation_clock, 'RX_END')
+			collision, col_dev = channel.change_mode(simulation_clock, 'RX_END', device_ID)
+
+			# Find out whether it is device 334 or 1889 that is passing the guard interval
+			#device_slot, current_period = get_device_time_slot(device_ID, time_slot_assignments, simulation_clock, period)
+			#if device_ID == 334:
+			#	print("334",simulation_clock/period,simulation_clock%period, time_slots_start_times[device_slot+1]-GI/2)
+
+			#if collision:
+			#	print("RX_END slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
 
 		elif event.event_type == 'SHORT_RX_START':
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
-			channel.change_mode(simulation_clock, 'RX_START')
+			collision, col_dev = channel.change_mode(simulation_clock, 'RX_START', device_ID)
+
+			#if collision:
+			#	print("SHORT_RX_START slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
+
 			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_no_preamble), event_type='RX_END', device=device_ID))
 
 
@@ -604,7 +636,7 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 		print("Rescheduling count", number_of_rescheduling_shifts, "\nAverage number of reschedulings", number_of_rescheduling_shifts/n, "\nAverage shift is", accumulated_rescheduling_shift_in_min_periods/number_of_rescheduling_shifts)
 
 	#print("Return", "uplink_utilization", uplink_utilization, "accumulated_drift_correction_count", accumulated_drift_correction_count, "accumulated_energy_consumption", accumulated_energy_consumption, "number_of_rescheduling_shifts", number_of_rescheduling_shifts, "accumulated_rescheduling_shift_in_min_periods", accumulated_rescheduling_shift_in_min_periods, "accumulated_rescheduling_shift_per_device_period",accumulated_rescheduling_shift_per_device_period, "accumulated_drift_correct_count_per_device_period", accumulated_drift_correct_count_per_device_period, "accumulated_energy_consumption_per_device_period", accumulated_energy_consumption_per_device_period,"\n")
-	return uplink_utilization, accumulated_drift_correction_count, accumulated_energy_consumption, number_of_rescheduling_shifts, accumulated_rescheduling_shift_in_min_periods, accumulated_rescheduling_shift_per_device_period, accumulated_rescheduling_count_per_device_period, accumulated_drift_correct_count_per_device_period, accumulated_energy_consumption_per_device_period, devices_per_period, successful_tx_per_device_period, hourly_rescheduling, hourly_rescheduling_shift, device_periods, device_rescheduling_shifts
+	return uplink_utilization, accumulated_drift_correction_count, accumulated_energy_consumption, number_of_rescheduling_shifts, accumulated_rescheduling_shift_in_min_periods, accumulated_rescheduling_shift_per_device_period, accumulated_rescheduling_count_per_device_period, accumulated_drift_correct_count_per_device_period, accumulated_energy_consumption_per_device_period, devices_per_period, successful_tx_per_device_period, hourly_rescheduling, hourly_rescheduling_shift, hourly_collisions, device_periods, device_rescheduling_shifts
 	#print("Average energy consumption", accumulated_energy_consumption/n, "joules\n")
 
 	if axs_energy == None or axs_shift == None or axs_resched == None:
@@ -630,10 +662,10 @@ if __name__=="__main__":
 	plot_on = False
 
 	ns = [200,400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2600,2800,3000,3200,3400,3600]
-	#versions = ['random']
+	versions = ['random']
 	#versions = ['next_slot']
 	#versions = ['optimized_v1']
-	versions = ['optimized_v2']
+	#versions = ['optimized_v2']
 
 	results_path = versions[0]+".jsonl"
 
@@ -668,7 +700,7 @@ if __name__=="__main__":
 						accumulated_drift_correct_count_per_device_period,
 						accumulated_energy_consumption_per_device_period,
 						devices_per_period, successful_tx_per_device_period,
-						hourly_rescheduling, hourly_rescheduling_shift,
+						hourly_rescheduling, hourly_rescheduling_shift, hourly_collisions,
 						device_periods, device_rescheduling_shifts
 					)  = main(n=n, version=v, axs_energy=None, axs_shift=None, axs_resched=None)
 
@@ -688,6 +720,7 @@ if __name__=="__main__":
 						"successful_txs_per_device_period": successful_tx_per_device_period,
 						"hourly_rescheduling": hourly_rescheduling, 
 						"hourly_rescheduling_shift": hourly_rescheduling_shift,
+						"hourly_collisions": hourly_collisions,
 						"device_periods": device_periods, 
 						"all_resched_shifts_per_device": device_rescheduling_shifts
 					}

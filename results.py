@@ -18,7 +18,7 @@ def load_jsonl(file_path, version_name=None):
             data.append(entry)
     return data
 
-def group_indexed_data(entries, value_key, device_key, group_range=(20, 100), step=10):
+def group_indexed_data(entries, value_key, device_key, group_range=(20, 70), step=10):
     grouped = defaultdict(list)
     for entry in entries:
         values = entry.get(value_key, [])
@@ -38,7 +38,7 @@ def group_indexed_data(entries, value_key, device_key, group_range=(20, 100), st
                 grouped[(version, net_size, group_label)].append(val / dev_count)
     return grouped
 
-def group_indexed_data_per_version(entries, value_key, device_key, group_range=(20, 100), step=10):
+def group_indexed_data_per_version(entries, value_key, device_key, group_range=(20, 70), step=10):
     grouped = defaultdict(lambda: defaultdict(list))
     for entry in entries:
         values = entry.get(value_key, [])
@@ -131,10 +131,10 @@ def plot_avg_shift_by_period_group(data, yaxis_bound=None):
 
         for i in range(min(len(values), len(devices))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_shift[key] += values[i]
@@ -195,10 +195,10 @@ def plot_avg_resched_count_by_period_group(data, yaxis_bound=None):
 
         for i in range(min(len(values), len(devices))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_count[key] += values[i]
@@ -261,10 +261,10 @@ def plot_avg_shift_by_period_group_bar(data, nw_sz, yaxis_bound=None):
 
         for i in range(min(len(values), len(devices))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_shift[key] += values[i]
@@ -326,10 +326,10 @@ def plot_avg_resched_count_by_period_group_bar(data, nw_sz, yaxis_bound=None):
 
         for i in range(min(len(values), len(devices))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_count[key] += values[i]
@@ -390,10 +390,10 @@ def plot_rescheduling_probability_by_period_group(data, nw_sz):
 
         for i in range(min(len(rescheds), len(successes))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_resched[key] += rescheds[i]
@@ -401,7 +401,7 @@ def plot_rescheduling_probability_by_period_group(data, nw_sz):
 
     desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
     versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_resched)]
-    period_groups = [f"{g}-{g+9}" for g in range(20, 100, 10)] + ["100-100"]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 70, 10)] + ["70-70"]
     hue_order = sorted(set(nw_sz))
 
     cols = 2
@@ -455,10 +455,10 @@ def plot_data_unavailability_by_period_group(data, nw_sz, yaxis_bound=None):
 
         for i in range(min(len(shifts_per_device), len(periods))):
             period = periods[i]
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             shifts = shifts_per_device[i]
@@ -467,7 +467,7 @@ def plot_data_unavailability_by_period_group(data, nw_sz, yaxis_bound=None):
 
     desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
     versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_total)]
-    period_groups = [f"{g}-{g+9}" for g in range(20, 100, 10)] + ["100-100"]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 70, 10)] + ["70-70"]
     hue_order = sorted(set(nw_sz))
 
     cols = 2
@@ -524,10 +524,10 @@ def plot_energy_by_period_group(data):
 
         for i in range(min(len(energy_vals), len(device_counts))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_energy[key] += energy_vals[i]
@@ -582,10 +582,10 @@ def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
 
         for i in range(min(len(energy), len(success))):
             period = 20 + i
-            if period > 100:
+            if period > 70:
                 continue
             group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 100)}"
+            group_label = f"{group_start}-{min(group_start + 9, 70)}"
             key = (version, net_size, group_label)
 
             grouped_energy[key] += energy[i]
@@ -593,7 +593,7 @@ def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
 
     desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
     versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_energy)]
-    period_groups = [f"{g}-{g+9}" for g in range(20, 100, 10)] + ["100-100"]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 70, 10)] + ["70-70"]
     hue_order = sorted(set(nw_sz))
 
     cols = 2
@@ -638,10 +638,10 @@ def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
 
 # Replace these with your actual filenames and version names
 files = [
-    ("new_results/next_slot.jsonl", "Next Slot"),
-    ("new_results/random.jsonl", "Random"),
-    ("new_results/optimized_v1.jsonl", "Optimized V1"),
-    ("new_results/optimized_v2.jsonl", "Optimized V2")
+    ("results/next_slot.jsonl", "Next Slot"),
+    ("results/random.jsonl", "Random"),
+    ("results/optimized_v1.jsonl", "Optimized V1"),
+    ("results/optimized_v2.jsonl", "Optimized V2")
 ]
 
 all_data = []
