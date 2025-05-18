@@ -122,13 +122,6 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 		simulation_clock = event.time
 		device_ID = event.device
 		
-		#if device_ID == 1799:
-		#	print(event.event_type, " \t", device_slot, device_ID, simulation_clock/period)
-
-		#if device_slot == 2:
-			#print(simulation_clock/period ,time_slot_assignments[2],"\n")
-			#print(event.event_type, device_slot, device_ID, simulation_clock, time_slot_assignments[device_slot], "\n")
-
 		if event.event_type == "UPDATE_OFFSET":
 
 			updated_offsets = update_offset(eds, event.time_slot, time_slot_assignments, time_slot_assignments_ext, period, simulation_clock)
@@ -263,15 +256,11 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 				# Calculate time shift and adjust transmission time of device using nextTX_without_drift (which is exactly one period from the transmission just received)
 				time_shift = start_time - nextTX_without_drift
 
-				eds[device_ID].adjust_tx_time(time_shift, global_period)
-
+				eds[device_ID].adjust_tx_time(time_shift)
 
 				calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slot_assignments_ext[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI, sim_end)
 				time_slot_assignments_ext[slot_index][3] = find_compatible_periods_for_slot(slot_index, time_slot_assignments_ext, time_slots_start_times, period, min_device_period, max_device_period)
 				
-				#if 1576 == device_ID or 686 == device_ID:
-					#print(device_ID, eds[device_ID].period/period, simulation_clock/period, eds[device_ID].nextTX/period)
-
 				# Add events to queue
 				heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 			
@@ -306,9 +295,6 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					idx_of_dev_in_plan = rescheduling_plan[0].index(device_ID)
 					slot_index = rescheduling_plan[1][idx_of_dev_in_plan]
 					periods_from_now = rescheduling_plan[2][idx_of_dev_in_plan]
-
-					#if 1852 == device_ID:
-						#print("RESCHEDDD", device_ID, eds[device_ID].period/period, simulation_clock/period, eds[device_ID].nextTX/period, periods_from_now)
 
 					eds[device_ID].period_until_downlink = float('inf')
 
@@ -358,23 +344,18 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 					global_period = int(start_time/period)
 
-					#print("RESCHEDDD", device_ID, eds[device_ID].period/period, simulation_clock/period, time_slots_start_times[slot_index]/period, eds[device_ID].nextTX/period, periods_from_now)
-
 					this_dev_resch_count, this_dev_total_resch_shift = eds[device_ID].update_rescheduling_shifts(time_shift, simulation_clock)
 					rescheduling_count_each_device[device_ID] = this_dev_resch_count
 					rescheduling_shift_each_device[device_ID] = this_dev_total_resch_shift
 
-					eds[device_ID].adjust_tx_time(time_shift, global_period)
-
-
-					#if 2717 == device_ID or 489 == device_ID:
-					#if 1750 == device_ID or 314 == device_ID:
-					#	print("RESCHED WITH PLAN", device_ID, device_slot, slot_index, periods_from_now, simulation_clock/period, eds[device_ID].nextTX/period)
+					#eds[device_ID].adjust_tx_time(time_shift)
+					eds[device_ID].downlink_time_shift = time_shift
+					eds[device_ID].downlink_msg_type = "reschedule"
 
 					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slot_assignments_ext[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI, sim_end)
 					time_slot_assignments_ext[slot_index][3] = find_compatible_periods_for_slot(slot_index, time_slot_assignments_ext, time_slots_start_times, period, min_device_period, max_device_period)
 
-					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+					#heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
 
 
@@ -434,12 +415,8 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					# If the old device slot is earlier than the new, then the current_period is actually +1 since a slot is offset 0 if there is less than one minimum period until
 					if device_slot <= slot_index:
 						start_time = (current_period + periods_from_now) * period + time_slots_start_times[slot_index]
-						#if 1852 == device_ID:
-						#	print("Earlier", device_ID, device_slot, slot_index, periods_from_now, simulation_clock/period)#eds[device_ID].period/period, simulation_clock/period, eds[device_ID].nextTX/period, periods_from_now)
 					elif device_slot > slot_index:
 						start_time = (current_period + 1 + periods_from_now) * period + time_slots_start_times[slot_index]
-						#if 1852 == device_ID:
-						#	print("Later  ", device_ID, device_slot, slot_index, periods_from_now, simulation_clock/period)#eds[device_ID].period/period, simulation_clock/period, eds[device_ID].nextTX/period, periods_from_now)
 
 					# Calculate time shift and adjust transmission time of device using nextTX_without_drift (which is exactly one period from the transmission just received)
 					time_shift = start_time - nextTX_without_drift
@@ -450,16 +427,14 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					rescheduling_count_each_device[device_ID] = this_dev_resch_count
 					rescheduling_shift_each_device[device_ID] = this_dev_total_resch_shift
 
-					eds[device_ID].adjust_tx_time(time_shift, global_period)
-
-					
-					#if 1750 == device_ID or 314 == device_ID:
-					#	print("RESCHED NO PLAN", device_ID, device_slot, slot_index, periods_from_now, simulation_clock/period, eds[device_ID].nextTX/period)
+					#eds[device_ID].adjust_tx_time(time_shift)
+					eds[device_ID].downlink_time_shift = time_shift
+					eds[device_ID].downlink_msg_type = "reschedule"
 
 					calculate_time_slot_collisions(eds, slot_index, time_slot_assignments[slot_index], time_slot_assignments_ext[slot_index], time_slots_start_times, requested_period, rescheduling_bound, period, simulation_clock, incompatible_with_slot, GI, sim_end)
 					time_slot_assignments_ext[slot_index][3] = find_compatible_periods_for_slot(slot_index, time_slot_assignments_ext, time_slots_start_times, period, min_device_period, max_device_period)
 
-					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+					#heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
 					
 
@@ -470,16 +445,11 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					time_slot_this_period = current_period*period + time_slots_start_times[device_slot]
 					time_shift = time_slot_this_period - current_tx_start_time
 
-					eds[device_ID].update_drift_correction_count(simulation_clock)
-					eds[device_ID].adjust_tx_time(time_shift)
+					eds[device_ID].downlink_time_shift = time_shift
+					eds[device_ID].downlink_msg_type = "drift_correct"
 
-					#if device_ID == 334:
-					#	print("YES CORRECT LETSGO", eds[device_ID].period_until_downlink)
-
-					# Add events to queue
-					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+					# Add event to queue
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='RX_START', device=device_ID))
-
 
 				# If NO drift correction is necessary
 				else:				
@@ -493,15 +463,11 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 					# By flooring the quotient we know to drift correct latest when this is 0
 					eds[device_ID].period_until_downlink = math.floor(t/eds[device_ID].period)
 
-					#if device_ID == 334:
-						#print("NO CORRECT LETSGO", eds[device_ID].period_until_downlink)
-
 					# Add events to queue
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 					heapq.heappush(event_queue, Event(time=int(current_tx_start_time+tx_duration+rx_delay), event_type='SHORT_RX_START', device=device_ID))
 
 
-				#if 2717 == device_ID or 489 == device_ID:
 				#if 1750 == device_ID or 314 == device_ID:
 				#	print(device_ID, eds[device_ID].period/period, simulation_clock/period, eds[device_ID].nextTX/period, eds[device_ID].global_period_rescheduling)
 
@@ -509,37 +475,35 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
 			collision, col_dev = channel.change_mode(simulation_clock, 'RX_START', device_ID)
 
-			#if collision:
-			#	print("RX_START slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
-
 			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_duration), event_type='RX_END', device=device_ID))
 
 		elif event.event_type == 'RX_END':
 			eds[device_ID].change_mode(simulation_clock, 'RX_END')
 			collision, col_dev = channel.change_mode(simulation_clock, 'RX_END', device_ID)
 
-			# Find out whether it is device 334 or 1889 that is passing the guard interval
-			#device_slot, current_period = get_device_time_slot(device_ID, time_slot_assignments, simulation_clock, period)
-			#if device_ID == 334:
-			#	print("334",simulation_clock/period,simulation_clock%period, time_slots_start_times[device_slot+1]-GI/2)
+			if not collision and not eds[device_ID].downlink_time_shift == None and not eds[device_ID].downlink_msg_type == None:
+				if eds[device_ID].downlink_msg_type == 'drift_correct':
+					eds[device_ID].update_drift_correction_count(simulation_clock)
+					eds[device_ID].adjust_tx_time(eds[device_ID].downlink_time_shift)
+					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 
-			#if collision:
-			#	print("RX_END slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
+				elif eds[device_ID].downlink_msg_type == 'reschedule':
+					eds[device_ID].adjust_tx_time(time_shift)
+					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+
+
+			eds[device_ID].downlink_time_shift = None
+			eds[device_ID].downlink_msg_type = None
 
 		elif event.event_type == 'SHORT_RX_START':
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
 			collision, col_dev = channel.change_mode(simulation_clock, 'RX_START', device_ID)
-
-			#if collision:
-			#	print("SHORT_RX_START slot",device_slot, "ID", device_ID, "is colliding with ID", col_dev," at time", round(simulation_clock/period,3))
 
 			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_no_preamble), event_type='RX_END', device=device_ID))
 
 
 	for ed in eds:
 		ed.change_mode(sim_end,'SIM_END')
-		#print(ed.energy_consumption)
-
 
 	slot_utilization = []
 	for slot in range(slot_count):
@@ -565,10 +529,6 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 			if util == 1:
 				fully_utilized_slots += 1
 
-			'''print(f"\nSlot {i} with utililzation {util}")
-			for dev in slot:
-				print("Dev", dev['device_id'], "Period", dev['period']/period)'''
-
 	overall_utilization = 0
 	for slot in slot_utilization:
 		overall_utilization += slot/slot_count
@@ -577,10 +537,6 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 	for ed in eds:
 		all_periods_summed += ed.period/period
 	avg_period = all_periods_summed/n
-
-	#print("\nOverall utilization:", overall_utilization)
-	#print("Fully utilized slots:", fully_utilized_slots
-
 
 	accumulated_drift_correction_count = 0
 	accumulated_energy_consumption = 0
@@ -595,11 +551,6 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 	accumulated_rescheduling_shift_per_device_period = [0 for i in range(min_device_period, max_device_period+1)]
 	device_rescheduling_shifts = []
 
-	
-	#for ed in eds:
-		#if int(ed.period/period) == 80:
-		#	print(ed.ID, ed.downlink_times)
-	
 	for ed in eds:
 		accumulated_drift_correction_count += ed.drift_correction_count
 		accumulated_energy_consumption += ed.energy_consumption
@@ -616,44 +567,18 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 			accumulated_rescheduling_count_per_device_period[int(ed.period/period)-min_device_period] += 1
 			device_rescheduling_shifts[-1].append(shift/period)
 
-	#print(device_rescheduling_shifts)
-	#print(hourly_rescheduling_shift)
-	#print(hourly_rescheduling)
-
-	#for i in range(len(accumulated_rescheduling_count_per_device_period)):
-	#	print(i, accumulated_rescheduling_count_per_device_period[i], accumulated_drift_correct_count_per_device_period[i])
-
 	print(n, "number of nodes")
 	number_of_min_periods_during_simulation = sim_end // period
-	#print("TX", sum(successful_tx_per_device_period), successful_tx_per_device_period)
 	max_uplink_time_during_simulation = number_of_min_periods_during_simulation * slot_count * tx_duration
 	uplink_utilization = channel.accumulated_uplink_time/max_uplink_time_during_simulation
 	print("Uplink utilization:", uplink_utilization)
 	print("Number of collisions:", channel.number_of_collisions)
 
-
 	if not number_of_rescheduling_shifts == 0:
 		print("Rescheduling count", number_of_rescheduling_shifts, "\nAverage number of reschedulings", number_of_rescheduling_shifts/n, "\nAverage shift is", accumulated_rescheduling_shift_in_min_periods/number_of_rescheduling_shifts)
 
-	#print("Return", "uplink_utilization", uplink_utilization, "accumulated_drift_correction_count", accumulated_drift_correction_count, "accumulated_energy_consumption", accumulated_energy_consumption, "number_of_rescheduling_shifts", number_of_rescheduling_shifts, "accumulated_rescheduling_shift_in_min_periods", accumulated_rescheduling_shift_in_min_periods, "accumulated_rescheduling_shift_per_device_period",accumulated_rescheduling_shift_per_device_period, "accumulated_drift_correct_count_per_device_period", accumulated_drift_correct_count_per_device_period, "accumulated_energy_consumption_per_device_period", accumulated_energy_consumption_per_device_period,"\n")
 	return uplink_utilization, accumulated_drift_correction_count, accumulated_energy_consumption, number_of_rescheduling_shifts, accumulated_rescheduling_shift_in_min_periods, accumulated_rescheduling_shift_per_device_period, accumulated_rescheduling_count_per_device_period, accumulated_drift_correct_count_per_device_period, accumulated_energy_consumption_per_device_period, devices_per_period, successful_tx_per_device_period, hourly_rescheduling, hourly_rescheduling_shift, hourly_collisions, device_periods, device_rescheduling_shifts
-	#print("Average energy consumption", accumulated_energy_consumption/n, "joules\n")
 
-	if axs_energy == None or axs_shift == None or axs_resched == None:
-		axs_energy = None
-		axs_shift = None
-		axs_resched = None
-
-	#return channel.accumulated_uplink_time/max_uplink_time_during_simulation
-
-
-
-	#plot_energy_consumption_distribution(eds, axs_energy)
-	#plot_rescheduling_shift_swarm_distributions(eds, period, axs_shift)
-	#plot_number_of_reschedulings(eds, axs_resched)
-	#print(hourly_rescheduling)
-
-	#print("Average period", avg_period)
 
 
 if __name__=="__main__":
@@ -662,10 +587,11 @@ if __name__=="__main__":
 	plot_on = False
 
 	ns = [200,400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2600,2800,3000,3200,3400,3600]
-	versions = ['random']
+	#ns = [2100]
+	#versions = ['random']
 	#versions = ['next_slot']
 	#versions = ['optimized_v1']
-	#versions = ['optimized_v2']
+	versions = ['optimized_v2']
 
 	results_path = versions[0]+".jsonl"
 

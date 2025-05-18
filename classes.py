@@ -97,6 +97,8 @@ class ED:
 		self.period = period
 		self.min_period = min_period
 		self.nextTX = join_time
+		self.downlink_time_shift = None
+		self.downlink_msg_type = None 
 		self.nextTX_min_period = -1					# This is set when device joins since min_periods tells us which min_period of a specific slot we are talking about
 		self.drift_direction = drift_direction
 		self.drift = drift
