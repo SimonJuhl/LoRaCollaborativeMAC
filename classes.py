@@ -9,7 +9,6 @@ class Channel:
 		self.transmission_started = -1
 		self.collision_detected = False
 		self.accumulated_uplink_time = 0
-		self.accumulated_collision_time = 0
 		self.number_of_collisions = 0
 
 		self.ongoing_rx = 0
@@ -94,28 +93,34 @@ class Event:
 class ED:
 	def __init__(self, ID, period, join_time, min_period, drift_direction=1, drift=10):
 		self.ID = ID
-		self.period = period
 		self.min_period = min_period
-		self.nextTX = join_time
-		self.downlink_time_shift = None
-		self.downlink_msg_type = None 
-		self.nextTX_min_period = -1					# This is set when device joins since min_periods tells us which min_period of a specific slot we are talking about
+
+		# Properties
+		self.period = period
 		self.drift_direction = drift_direction
 		self.drift = drift
-		self.period_until_downlink = float('inf')
-		self.perform_drift_correction = False
-		self.global_period_rescheduling = -1
-		self.uplink_times = []
-		self.joined = False
+		self.voltage = 3.3
 
-		self.energy_consumption = 0 			# Joules
+		# States
+		self.nextTX = join_time
+		self.joined = False
 		self.current_mode = 'STANDBY'
 		self.last_mode_change = 0
-		self.voltage = 3.3
+
+		# Used only by network server
+		self.global_period_rescheduling = -1
+		self.period_until_downlink = float('inf')
+		self.uplink_times = []
+
+		# This is what the downlink packet contains. The device updates its nextTX according to this if the downlink is received
+		self.downlink_time_shift = None
+		self.downlink_msg_type = None 
+
+		# Metrics
+		self.energy_consumption = 0  	# Joules
 		self.rescheduling_shifts = []
 		self.rescheduling_shifts_in_dev_periods = []
 		self.drift_correction_count = 0
-		self.downlink_times = []
 		self.successful_tx_count = 0
 
 	def update_next_tx_time(self):
@@ -123,18 +128,10 @@ class ED:
 		drift_adjustment = int(self.period * drift_per_microsecond * self.drift_direction)
 		nextTX_without_drift = self.nextTX + self.period
 		self.nextTX += self.period + drift_adjustment
-		# When joining we want to know which period it is scheduled into
-		if self.joined:
-			self.nextTX_min_period += int(self.period/self.min_period)
-		#return self.nextTX, nextTX_without_drift
 
 	# Both used to correct drift and reschedule
 	def adjust_tx_time(self, time_shift, global_period=None):
 		self.nextTX = self.nextTX + time_shift
-
-		# global_period is passed through on join and rescheduling, but during drift correction it keeps the same nextTX_min_period
-		if not global_period == None:
-			self.nextTX_min_period = global_period
 
 	def change_mode(self, clock, event):
 		if self.current_mode == 'STANDBY':
@@ -175,12 +172,10 @@ class ED:
 	def update_rescheduling_shifts(self, shift, current_time):
 		self.rescheduling_shifts.append(shift)
 		self.rescheduling_shifts_in_dev_periods.append(shift/self.period)
-		self.downlink_times.append("resch" + str(current_time/self.min_period))
 		return len(self.rescheduling_shifts), sum(self.rescheduling_shifts)
 
 	def update_drift_correction_count(self, current_time):
 		self.drift_correction_count += 1
-		self.downlink_times.append("drift" + str(current_time/self.min_period))
 
 	def count_successful_tx(self):
 		self.successful_tx_count += 1

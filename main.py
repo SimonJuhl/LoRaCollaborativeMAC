@@ -479,16 +479,21 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 		elif event.event_type == 'RX_END':
 			eds[device_ID].change_mode(simulation_clock, 'RX_END')
-			collision, col_dev = channel.change_mode(simulation_clock, 'RX_END', device_ID)
 
-			if not collision and not eds[device_ID].downlink_time_shift == None and not eds[device_ID].downlink_msg_type == None:
-				if eds[device_ID].downlink_msg_type == 'drift_correct':
-					eds[device_ID].update_drift_correction_count(simulation_clock)
-					eds[device_ID].adjust_tx_time(eds[device_ID].downlink_time_shift)
-					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+			if not eds[device_ID].downlink_time_shift == None and not eds[device_ID].downlink_msg_type == None:
+				# Only change channel mode is a downlink was actually sent. Otherwise it was just a SHORT_RX_START to simulate energy consumption
+				collision, col_dev = channel.change_mode(simulation_clock, 'RX_END', device_ID)
+				if not collision:
+					if eds[device_ID].downlink_msg_type == 'drift_correct':
+						eds[device_ID].update_drift_correction_count(simulation_clock)
+						eds[device_ID].adjust_tx_time(eds[device_ID].downlink_time_shift)
+						heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 
-				elif eds[device_ID].downlink_msg_type == 'reschedule':
-					eds[device_ID].adjust_tx_time(time_shift)
+					elif eds[device_ID].downlink_msg_type == 'reschedule':
+						eds[device_ID].adjust_tx_time(time_shift)
+						heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
+				# If there is a collision then add event to queue without update tx time
+				else:
 					heapq.heappush(event_queue, Event(time=eds[device_ID].nextTX, event_type='TX_START', device=device_ID))
 
 
@@ -497,7 +502,7 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 		elif event.event_type == 'SHORT_RX_START':
 			eds[device_ID].change_mode(simulation_clock, 'RX_START')
-			collision, col_dev = channel.change_mode(simulation_clock, 'RX_START', device_ID)
+			#collision, col_dev = channel.change_mode(simulation_clock, 'RX_START', device_ID)
 
 			heapq.heappush(event_queue, Event(time=int(simulation_clock+rx_no_preamble), event_type='RX_END', device=device_ID))
 
@@ -586,8 +591,8 @@ if __name__=="__main__":
 
 	plot_on = False
 
-	ns = [200,400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2600,2800,3000,3200,3400,3600]
-	#ns = [2100]
+	#ns = [200,400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2600,2800,3000,3200,3400,3600]
+	ns = [1800,2000]
 	#versions = ['random']
 	#versions = ['next_slot']
 	#versions = ['optimized_v1']

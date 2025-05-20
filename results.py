@@ -80,7 +80,7 @@ def plot_avg_shift(data, nw_sz):
         rows.append({
             "version": entry["version"],
             "network_size": entry["network_size"],
-            "avg_shift": avg_shift / 60
+            "avg_shift": avg_shift / (3*24)
         })
     df = pd.DataFrame(rows)
     plt.figure(figsize=(8, 5))
@@ -106,7 +106,7 @@ def plot_avg_downlink(data, nw_sz):
         rows.append({
             "version": entry["version"],
             "network_size": entry["network_size"],
-            "avg_resched_count": (avg_resched_count + avg_drift_correct) / 60
+            "avg_resched_count": (avg_resched_count + avg_drift_correct) / (3*24)
         })
     df = pd.DataFrame(rows)
     plt.figure(figsize=(8, 5))
@@ -117,6 +117,53 @@ def plot_avg_downlink(data, nw_sz):
     plt.tight_layout()
     plt.show()
 
+def plot_avg_downlink_v2(data, nw_sz):
+    rows = []
+    for entry in data:
+        if entry["network_size"] not in nw_sz:
+            continue
+
+        version = entry["version"]
+        net_size = entry["network_size"]
+
+        total_drift_correct = sum(entry.get("drift_correct_per_device_period", []))
+        total_resched_count = sum(entry.get("resched_count_per_device_period", []))
+
+        avg_drift_correct = total_drift_correct / max(1, net_size)
+        avg_resched_count = total_resched_count / max(1, net_size)
+
+        # Combined downlink usage per hour
+        rows.append({
+            "version": version,
+            "network_size": net_size,
+            "type": "Drift + Resched",
+            "downlinks_per_hour": (avg_resched_count + avg_drift_correct) / (3*24)
+        })
+
+        # Drift-only downlink usage per hour
+        rows.append({
+            "version": version,
+            "network_size": net_size,
+            "type": "Drift Only",
+            "downlinks_per_hour": avg_drift_correct / (3*24)
+        })
+
+    df = pd.DataFrame(rows)
+
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(
+        data=df,
+        x="network_size",
+        y="downlinks_per_hour",
+        hue="version",
+        style="type",
+        marker="o"
+    )
+    plt.title("Average Number of Downlinks per Hour per Device")
+    plt.xlabel("Number of Devices")
+    plt.ylabel("Downlinks per Hour")
+    plt.tight_layout()
+    plt.show()
 
 
 def plot_avg_shift_by_period_group(data, yaxis_bound=None):
@@ -160,7 +207,7 @@ def plot_avg_shift_by_period_group(data, yaxis_bound=None):
                 rows_data.append({
                     "network_size": net_size,
                     "period_group": group_label,
-                    "avg_shift": avg_shift / 60
+                    "avg_shift": avg_shift / (3*24)
                 })
 
         df = pd.DataFrame(rows_data)
@@ -648,30 +695,33 @@ all_data = []
 for file, name in files:
     all_data.extend(load_jsonl(file, version_name=name))
 
-network_sizes = [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600]
-network_sizes_group_bar = [600, 1200, 1800, 2400, 3000, 3600]
+#network_sizes = [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600]
+network_sizes = [1600, 1800, 2000, 2200, 2400, 2600, 2800]
+network_sizes_group_bar = [2000, 2200, 2400, 2600]
 
 
 # Utilization
-plot_utilization(all_data, network_sizes)
+#plot_utilization(all_data, network_sizes)
 
 # Average rescheduling shift
-plot_avg_shift(all_data, network_sizes)
+#plot_avg_shift(all_data, network_sizes)
 
 # Average of all downlink communication. My favorite
-plot_avg_downlink(all_data, network_sizes)
+#plot_avg_downlink(all_data, network_sizes)
+
+plot_avg_downlink_v2(all_data, network_sizes)
 
 # Average rescheduling shift. Grouped by device period (bars are missing since some networks sizes don't have any rescheduling)
-plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
+#plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
 
 # Average number of reschedulings. Grouped by device period
-plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
+#plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
 
 # Number of reschedulings divided by the number of successful transmissions
-plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+#plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
 # Unavailable if shift is greater then threshold = one device period (Does not look good. Maybe make a table instead)
-plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+#plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
 
 #plot_energy_by_period_group(all_data)
