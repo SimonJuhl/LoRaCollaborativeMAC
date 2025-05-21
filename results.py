@@ -18,46 +18,14 @@ def load_jsonl(file_path, version_name=None):
             data.append(entry)
     return data
 
-def group_indexed_data(entries, value_key, device_key, group_range=(20, 70), step=10):
-    grouped = defaultdict(list)
-    for entry in entries:
-        values = entry.get(value_key, [])
-        devices = entry.get(device_key, [])
-        version = entry["version"]
-        net_size = entry["network_size"]
+def get_period_group(period):
+    if period > 70:
+        return None
+    if 60 <= period <= 70:
+        return "60-70"
+    group_start = (period // 10) * 10
+    return f"{group_start}-{min(group_start + 9, 70)}"
 
-        for i in range(len(values)):
-            period = 20 + i
-            if period > group_range[1]:
-                continue
-            group_start = (period // step) * step
-            group_label = f"{group_start}-{min(group_start + step - 1, group_range[1])}"
-            val = values[i]
-            dev_count = devices[i] if i < len(devices) else 1
-            if dev_count > 0:
-                grouped[(version, net_size, group_label)].append(val / dev_count)
-    return grouped
-
-def group_indexed_data_per_version(entries, value_key, device_key, group_range=(20, 70), step=10):
-    grouped = defaultdict(lambda: defaultdict(list))
-    for entry in entries:
-        values = entry.get(value_key, [])
-        devices = entry.get(device_key, [])
-        version = entry["version"]
-        net_size = entry["network_size"]
-
-        for i in range(len(values)):
-            period = 20 + i
-            if period > group_range[1]:
-                continue
-            group_start = (period // step) * step
-            group_label = f"{group_start}-{min(group_start + step - 1, group_range[1])}"
-            val = values[i]
-            dev_count = devices[i] if i < len(devices) else 1
-            if dev_count > 0:
-                avg_val = val / dev_count
-                grouped[version][(net_size, group_label)].append(avg_val)
-    return grouped
 
 def plot_utilization(data, nw_sz):
     df = pd.DataFrame(data)
@@ -180,8 +148,9 @@ def plot_avg_shift_by_period_group(data, yaxis_bound=None):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_shift[key] += values[i]
@@ -244,8 +213,9 @@ def plot_avg_resched_count_by_period_group(data, yaxis_bound=None):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_count[key] += values[i]
@@ -310,8 +280,9 @@ def plot_avg_shift_by_period_group_bar(data, nw_sz, yaxis_bound=None):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_shift[key] += values[i]
@@ -375,8 +346,9 @@ def plot_avg_resched_count_by_period_group_bar(data, nw_sz, yaxis_bound=None):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_count[key] += values[i]
@@ -439,8 +411,9 @@ def plot_rescheduling_probability_by_period_group(data, nw_sz):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_resched[key] += rescheds[i]
@@ -448,7 +421,7 @@ def plot_rescheduling_probability_by_period_group(data, nw_sz):
 
     desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
     versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_resched)]
-    period_groups = [f"{g}-{g+9}" for g in range(20, 70, 10)] + ["70-70"]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 60, 10)] + ["60-70"]
     hue_order = sorted(set(nw_sz))
 
     cols = 2
@@ -504,8 +477,9 @@ def plot_data_unavailability_by_period_group(data, nw_sz, yaxis_bound=None):
             period = periods[i]
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             shifts = shifts_per_device[i]
@@ -514,7 +488,7 @@ def plot_data_unavailability_by_period_group(data, nw_sz, yaxis_bound=None):
 
     desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
     versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_total)]
-    period_groups = [f"{g}-{g+9}" for g in range(20, 70, 10)] + ["70-70"]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 60, 10)] + ["60-70"]
     hue_order = sorted(set(nw_sz))
 
     cols = 2
@@ -573,8 +547,9 @@ def plot_energy_by_period_group(data):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_energy[key] += energy_vals[i]
@@ -631,8 +606,9 @@ def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
             period = 20 + i
             if period > 70:
                 continue
-            group_start = (period // 10) * 10
-            group_label = f"{group_start}-{min(group_start + 9, 70)}"
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
             key = (version, net_size, group_label)
 
             grouped_energy[key] += energy[i]
@@ -640,7 +616,7 @@ def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
 
     desired_order = ["Random", "Next Slot", "Optimized V1", "Optimized V2"]
     versions_in_data = [v for v in desired_order if any(k[0] == v for k in grouped_energy)]
-    period_groups = [f"{g}-{g+9}" for g in range(20, 70, 10)] + ["70-70"]
+    period_groups = [f"{g}-{g+9}" for g in range(20, 60, 10)] + ["60-70"]
     hue_order = sorted(set(nw_sz))
 
     cols = 2
@@ -701,10 +677,10 @@ network_sizes_group_bar = [2000, 2200, 2400, 2600]
 
 
 # Utilization
-#plot_utilization(all_data, network_sizes)
+plot_utilization(all_data, network_sizes)
 
 # Average rescheduling shift
-#plot_avg_shift(all_data, network_sizes)
+plot_avg_shift(all_data, network_sizes)
 
 # Average of all downlink communication. My favorite
 #plot_avg_downlink(all_data, network_sizes)
@@ -712,16 +688,16 @@ network_sizes_group_bar = [2000, 2200, 2400, 2600]
 plot_avg_downlink_v2(all_data, network_sizes)
 
 # Average rescheduling shift. Grouped by device period (bars are missing since some networks sizes don't have any rescheduling)
-#plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
+plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
 
 # Average number of reschedulings. Grouped by device period
-#plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
+plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
 
 # Number of reschedulings divided by the number of successful transmissions
-#plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
 # Unavailable if shift is greater then threshold = one device period (Does not look good. Maybe make a table instead)
-#plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
 
 #plot_energy_by_period_group(all_data)

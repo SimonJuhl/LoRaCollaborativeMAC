@@ -126,12 +126,14 @@ class ED:
 	def update_next_tx_time(self):
 		drift_per_microsecond = self.drift / 1_000_000
 		drift_adjustment = int(self.period * drift_per_microsecond * self.drift_direction)
-		nextTX_without_drift = self.nextTX + self.period
 		self.nextTX += self.period + drift_adjustment
 
 	# Both used to correct drift and reschedule
 	def adjust_tx_time(self, time_shift, global_period=None):
-		self.nextTX = self.nextTX + time_shift
+		drift_per_microsecond = self.drift / 1_000_000
+		# We calculate how much the device will drift during the shift duration
+		drift_adjustment = int(time_shift * drift_per_microsecond * self.drift_direction)
+		self.nextTX = self.nextTX + time_shift + drift_adjustment
 
 	def change_mode(self, clock, event):
 		if self.current_mode == 'STANDBY':

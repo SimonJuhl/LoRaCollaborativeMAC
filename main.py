@@ -274,8 +274,6 @@ def main(n, version, axs_energy=None, axs_shift=None, axs_resched=None):
 
 				# Get time slot index value which device is assigned to
 				device_slot, current_period = get_device_time_slot(device_ID, time_slot_assignments, simulation_clock, period)
-				
-				
 
 				# If the beginning of this transmission collided or if the end of this transmission collided with another tx
 				if event.collision or collision:
@@ -592,11 +590,11 @@ if __name__=="__main__":
 	plot_on = False
 
 	#ns = [200,400,600,800,1000,1200,1400,1600,1800,2000,2200,2400,2600,2800,3000,3200,3400,3600]
-	ns = [1800,2000]
+	ns = [2600,2800,3000,3200,3400,3600,3800]
 	#versions = ['random']
 	#versions = ['next_slot']
-	#versions = ['optimized_v1']
-	versions = ['optimized_v2']
+	versions = ['optimized_v1']
+	#versions = ['optimized_v2']
 
 	results_path = versions[0]+".jsonl"
 
