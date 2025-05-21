@@ -657,6 +657,38 @@ def plot_energy_efficiency_by_period_group(data, nw_sz, yaxis_bound=None):
     plt.tight_layout()
     plt.show()
 
+
+def plot_hourly_collisions_by_version(data, target_network_size):
+    rows = []
+
+    for entry in data:
+        if entry["network_size"] != target_network_size:
+            continue
+
+        version = entry["version"]
+        hourly = entry.get("hourly_collisions", [])
+        for hour, collisions in enumerate(hourly):
+            rows.append({
+                "version": version,
+                "hour": hour,
+                "collisions": collisions
+            })
+
+    df = pd.DataFrame(rows)
+
+    if df.empty:
+        print(f"No data found for network size {target_network_size}")
+        return
+
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(data=df, x="hour", y="collisions", hue="version", marker="o")
+    plt.title(f"Hourly Collisions for Network Size {target_network_size}")
+    plt.xlabel("Hour")
+    plt.ylabel("Number of Collisions")
+    plt.tight_layout()
+    plt.show()
+
+
 # ----------- USAGE ----------------
 
 # Replace these with your actual filenames and version names
@@ -667,14 +699,24 @@ files = [
     ("results/optimized_v2.jsonl", "Optimized V2")
 ]
 
+files20to100 = [
+    ("results_period_20_to_100/next_slot.jsonl", "Next Slot"),
+    #("results_period_20_to_100/random.jsonl", "Random"),
+    ("results_period_20_to_100/optimized_v1.jsonl", "Optimized V1"),
+    ("results_period_20_to_100/optimized_v2.jsonl", "Optimized V2")
+]
+
 all_data = []
 for file, name in files:
     all_data.extend(load_jsonl(file, version_name=name))
 
+all_data_20to100 = []
+for file, name in files20to100:
+    all_data_20to100.extend(load_jsonl(file, version_name=name))
+
 #network_sizes = [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600]
 network_sizes = [1600, 1800, 2000, 2200, 2400, 2600, 2800]
 network_sizes_group_bar = [2000, 2200, 2400, 2600]
-
 
 # Utilization
 plot_utilization(all_data, network_sizes)
@@ -699,9 +741,12 @@ plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_grou
 # Unavailable if shift is greater then threshold = one device period (Does not look good. Maybe make a table instead)
 plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
-
 #plot_energy_by_period_group(all_data)
 
 # Energy per successful tx
 plot_energy_efficiency_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
+
+
+# Stress testing
+plot_hourly_collisions_by_version(all_data_20to100, 2600)
