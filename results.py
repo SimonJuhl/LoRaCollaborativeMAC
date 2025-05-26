@@ -688,6 +688,87 @@ def plot_hourly_collisions_by_version(data, target_network_size):
     plt.tight_layout()
     plt.show()
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import math
+from collections import defaultdict
+from itertools import product
+
+# Helper function to group periods
+def get_period_group(period):
+    if 20 <= period < 30:
+        return "20-29"
+    elif 30 <= period < 40:
+        return "30-39"
+    elif 40 <= period < 50:
+        return "40-49"
+    elif 50 <= period < 60:
+        return "50-59"
+    elif 60 <= period <= 70:
+        return "60-70"
+    return None
+
+# Main plotting function
+def plot_shift_swarm(data, nw_sz=[2000], xaxis_limit=None):
+    shift_data = []
+
+    for entry in data:
+        if entry.get("version") != "Optimized V2":
+            continue
+
+        shifts_per_device = entry.get("all_resched_shifts_per_device", [])
+        periods = entry.get("device_periods", [])
+        net_size = entry.get("network_size")
+
+        if net_size not in nw_sz:
+            continue
+
+        for i in range(min(len(shifts_per_device), len(periods))):
+            period = periods[i]
+            if period > 70:
+                continue
+            group_label = get_period_group(period)
+            if not group_label:
+                continue
+
+            for shift in shifts_per_device[i]:
+                shift_data.append({
+                    "Shift Value": shift,
+                    "Device Period Group": group_label,
+                    "Network Size": net_size,
+                    "Availability": "Unavailable" if shift > period else "Available"
+                })
+
+    if not shift_data:
+        print("No data available for Optimized V2.")
+        return
+
+    df = pd.DataFrame(shift_data)
+
+    plt.figure(figsize=(14, 6))
+    sns.stripplot(
+        data=df,
+        x="Shift Value",
+        y="Device Period Group",
+        hue="Availability",
+        dodge=True,
+        jitter=0.3,
+        alpha=0.7,
+        palette={"Available": "blue", "Unavailable": "red"}
+    )
+    plt.title("Shift Distribution (Optimized V2)")
+    plt.xlabel("Shift Value (Min Periods)")
+    plt.ylabel("Device Period Group")
+    plt.legend(title="Availability")
+
+    if xaxis_limit:
+        plt.xlim((0, xaxis_limit))
+
+    plt.tight_layout()
+    plt.show()
+
+
 
 # ----------- USAGE ----------------
 
@@ -719,34 +800,36 @@ network_sizes = [1600, 1800, 2000, 2200, 2400, 2600, 2800]
 network_sizes_group_bar = [2000, 2200, 2400, 2600]
 
 # Utilization
-plot_utilization(all_data, network_sizes)
+#plot_utilization(all_data, network_sizes)
 
 # Average rescheduling shift
-plot_avg_shift(all_data, network_sizes)
+#plot_avg_shift(all_data, network_sizes)
 
 # Average of all downlink communication. My favorite
 #plot_avg_downlink(all_data, network_sizes)
 
-plot_avg_downlink_v2(all_data, network_sizes)
+#plot_avg_downlink_v2(all_data, network_sizes)
 
 # Average rescheduling shift. Grouped by device period (bars are missing since some networks sizes don't have any rescheduling)
-plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
+#plot_avg_shift_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=1000)
 
 # Average number of reschedulings. Grouped by device period
-plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
+#plot_avg_resched_count_by_period_group_bar(all_data, network_sizes_group_bar, yaxis_bound=32)
 
 # Number of reschedulings divided by the number of successful transmissions
-plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+#plot_rescheduling_probability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
 # Unavailable if shift is greater then threshold = one device period (Does not look good. Maybe make a table instead)
-plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+#plot_data_unavailability_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+
+plot_shift_swarm(all_data, nw_sz=[2000], xaxis_limit=None)
 
 #plot_energy_by_period_group(all_data)
 
 # Energy per successful tx
-plot_energy_efficiency_by_period_group(all_data, nw_sz=network_sizes_group_bar)
+#plot_energy_efficiency_by_period_group(all_data, nw_sz=network_sizes_group_bar)
 
 
 
 # Stress testing
-plot_hourly_collisions_by_version(all_data_20to100, 2600)
+#plot_hourly_collisions_by_version(all_data_20to100, 2600)
